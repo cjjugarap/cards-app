@@ -68,6 +68,17 @@ button.btn:disabled{opacity:.4;cursor:default}
 .grades button.g4{background:var(--easy-soft);border-color:var(--easy);color:var(--easy)}
 .grades button.g1 small,.grades button.g2 small,.grades button.g3 small,.grades button.g4 small{color:inherit;opacity:.85}
 .grades button:disabled{opacity:.35;cursor:default}
+.grades button.sugg{box-shadow:0 0 0 2px currentColor}
+.card.t{height:min(36dvh,300px);min-height:200px}
+.card.t .qbox{inset:44px 18px 14px}
+.card.t .tapnote{display:none}
+.choices{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+.choice{font:inherit;font-size:.95rem;text-align:left;min-height:48px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;overflow-wrap:anywhere}
+.choice:disabled{cursor:default;opacity:.6}
+.choice.ok{background:var(--good-soft);border-color:var(--good);color:var(--good);opacity:1;font-weight:600}
+.choice.bad{background:var(--again-soft);border-color:var(--again);color:var(--again);opacity:1}
+#sresult{font-size:.9rem;font-weight:600;margin:8px 0 0}
+#sresult:empty{display:none}
 .sub{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.8rem;color:var(--muted)}
 .sub button{font:inherit;font-size:.8rem;min-height:36px;padding:0 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
 .sub button:disabled{opacity:.4;cursor:default}
@@ -140,6 +151,8 @@ img{max-width:100%}
     <details class="tools" id="stools">
       <summary>Study options</summary>
       <div class="settings">
+        <label>Card style<select id="cstyle"><option value="answer">Answer only</option><option value="choices">Answer and other choices</option><option value="test">Test: choices on the front</option></select></label>
+        <p class="lstat">Test: pick a choice on the front (the choices are shuffled each time). A wrong pick, or I don&rsquo;t know, leaves only Again; a right pick leaves all four buttons with Good suggested.</p>
         <label>Study which cards<select id="scope"><option value="all">All cards</option><option value="none">Cards with no chapter filled in</option></select></label>
         <div class="two">
           <label>New cards per day<input type="number" id="newperday" inputmode="numeric" min="0" max="1159" step="1"></label>
@@ -172,13 +185,15 @@ img{max-width:100%}
         <div class="face back" id="sfb">
           <span class="label">Answer</span>
           <div class="ans" id="sans"></div>
-          <span class="label">Other choices on this question</span>
+          <span class="label" id="sothlbl">Other choices on this question</span>
           <ul class="others" id="sothers"></ul>
           <p class="qrecall" id="sqrecall"></p>
           <div class="loc" data-loc="s"></div>
         </div>
       </div>
     </div>
+    <p id="sresult" role="status"></p>
+    <div class="choices" id="schoices" hidden></div>
     <div class="done" id="sdone" hidden></div>
     <nav class="row" id="sflipnav"><span></span><button type="button" class="btn main" id="sflip">Show answer</button><span></span></nav>
     <div class="grades" id="grades" hidden>
@@ -287,8 +302,9 @@ img{max-width:100%}
 
   <footer>
     <p>One card for each distinct question in the source bank, worded as it appeared. Chapter, heading and page start empty; you fill them in on the back of a card. A suggested chapter, where the study-guide text supports one, is shown there as a suggestion only.</p>
-    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v20</b> &middot; 4 Nov 2026 &middot; what changed</summary>
+    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v21</b> &middot; 4 Nov 2026 &middot; what changed</summary>
       <ul class="log">
+        <li><b>v21</b> Card style setting: answer only (new default), answer with other choices, or test mode with shuffled choices on the front.</li>
         <li><b>v20</b> Daily review limit, leech suspend, bury until tomorrow, manual suspend with an unsuspend list, interval fuzz.</li>
         <li><b>v19</b> Save and restore backups as a file, backup reminder after 7 days, review-log CSV export, persistent-storage status, optional custom FSRS weights.</li>
         <li><b>v18</b> Offline copy. Cards are stored encrypted; the passphrase unlocks them on this device and the app then works with no connection. Progress is kept on this device only, with a copy-and-restore backup.</li>
@@ -321,7 +337,7 @@ window.startApp = function(PAY){
 
   var LOC = lsGet(LS.loc,{});                 // card id -> {chapter, heading, page}
   var SRS = lsGet(LS.srs,{});                 // card id -> serialized FSRS card + log
-  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', reviewCap:200, leechAt:8, fuzz:true, seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
+  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', reviewCap:200, leechAt:8, fuzz:true, style:'answer', seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
   // card id -> {susp:bool, leech:bool, bury:ms epoch the burial ends, at:ISO of last change}; an entry with susp false is kept so a restore does not undo an unsuspend
   var FLAGS = lsGet(LS.flags,{});
   function setFlag(id,patch){ var f=Object.assign({},FLAGS[id]||{},patch,{at:new Date().toISOString()}); FLAGS[id]=f; lsSet(LS.flags,FLAGS); }
@@ -431,9 +447,9 @@ window.startApp = function(PAY){
       if(spanEl.offsetHeight<=box.clientHeight && spanEl.offsetWidth<=box.clientWidth) lo=mid; else hi=mid-1;}
     pEl.style.fontSize=lo+'px';
   }
-  function fillBack(ansEl, othersEl, recallEl, c){
+  function fillBack(ansEl, othersEl, recallEl, c, showOthers){
     ansEl.textContent=c[1][c[2]]; othersEl.innerHTML='';
-    c[1].forEach(function(o,k){ if(k!==c[2]){var li=document.createElement('li'); li.textContent=o; othersEl.appendChild(li);} });
+    if(showOthers!==false) c[1].forEach(function(o,k){ if(k!==c[2]){var li=document.createElement('li'); li.textContent=o; othersEl.appendChild(li);} });
     recallEl.textContent='Question: '+c[0];
   }
   function stateLabel(id){
@@ -512,7 +528,7 @@ window.startApp = function(PAY){
     updateBkWarn(); buildQueue(); renderCounts(); $('snote').textContent=pendingNote; pendingNote='';
     var id=nextId();
     if(!id || !sched){
-      sCur=null; $('sstage').hidden=true; $('sflipnav').hidden=true; $('grades').hidden=true; $('sactions').hidden=true;
+      sCur=null; $('sstage').hidden=true; $('sflipnav').hidden=true; $('grades').hidden=true; $('sactions').hidden=true; $('schoices').hidden=true; $('sresult').textContent='';
       var box=$('sdone'); box.hidden=false; box.innerHTML='';
       var p1=document.createElement('p'); p1.className='big';
       var later=queue.laterLearn;
@@ -535,7 +551,13 @@ window.startApp = function(PAY){
     sCur=id; $('sdone').hidden=true; $('sstage').hidden=false; $('sactions').hidden=false;
     var c=deck[idx[id]];
     $('sqs').textContent=c[0]; $('sstate').textContent=stateLabel(id);
-    fillBack($('sans'),$('sothers'),$('sqrecall'),c); showLoc('s',id);
+    var isTest=SET.style==='test', showOth=SET.style==='choices';
+    fillBack($('sans'),$('sothers'),$('sqrecall'),c,showOth); showLoc('s',id);
+    $('sothlbl').hidden=$('sothers').hidden=!showOth;
+    scard.classList.toggle('t',isTest); $('sresult').textContent='';
+    $('sflip').textContent = isTest ? 'I don’t know' : 'Show answer';
+    resetGradeRules();
+    if(isTest){ renderChoices(c); $('schoices').hidden=false; } else { $('schoices').innerHTML=''; $('schoices').hidden=true; }
     var now=new Date(); var r=rec(id); var card=r?toCard(r):F.createEmptyCard(now);
     sPreview=sched.repeat(card, now);
     for(var g=1;g<=4;g++) $('i'+g).textContent=ivText(sPreview[g].card, now);
@@ -543,9 +565,49 @@ window.startApp = function(PAY){
     $('count').textContent='card '+(idx[id]+1);
   }
   var forceId=null, pendingNote='';
+  /* ---------- test mode: choices on the front ---------- */
+  var tOrder=[], tPicked=-1, tWrong=false;   // tOrder: shuffled original choice indexes; tPicked: original index picked (-1 = none)
+  function renderChoices(c){
+    var box=$('schoices'); box.innerHTML=''; tPicked=-1; tWrong=false;
+    tOrder=c[1].map(function(_,i){ return i; });
+    for(var k=tOrder.length-1;k>0;k--){ var j=Math.floor(Math.random()*(k+1)), t=tOrder[k]; tOrder[k]=tOrder[j]; tOrder[j]=t; }
+    tOrder.forEach(function(orig,pos){
+      var b=document.createElement('button'); b.type='button'; b.className='choice'; b.setAttribute('data-orig',orig); b.textContent=c[1][orig];
+      b.addEventListener('click',function(){ pickChoice(pos); });
+      box.appendChild(b);
+    });
+  }
+  function markChoices(c){
+    document.querySelectorAll('#schoices .choice').forEach(function(b){
+      var o=parseInt(b.getAttribute('data-orig'),10); b.disabled=true;
+      if(o===c[2]) b.classList.add('ok'); else if(o===tPicked) b.classList.add('bad');
+    });
+  }
+  // a wrong pick (or I don't know) leaves only Again; a right pick leaves all four with Good suggested
+  function applyGradeRules(){
+    document.querySelectorAll('#grades button').forEach(function(b){
+      var g=parseInt(b.getAttribute('data-g'),10);
+      b.disabled = tWrong && g!==1;
+      b.classList.toggle('sugg', tWrong ? g===1 : g===3);
+    });
+  }
+  function resetGradeRules(){ tPicked=-1; tWrong=false; document.querySelectorAll('#grades button').forEach(function(b){ b.disabled=false; b.classList.remove('sugg'); }); }
+  function pickChoice(pos){
+    if(!sCur||sFlipped||SET.style!=='test') return;
+    var c=deck[idx[sCur]], orig=tOrder[pos]; tPicked=orig; tWrong=(orig!==c[2]); markChoices(c);
+    $('sresult').textContent = tWrong ? 'Not quite. The correct choice is highlighted.' : 'Correct.';
+    sSetFlipped(true); applyGradeRules();
+  }
+  function dontKnow(){
+    if(!sCur||sFlipped||SET.style!=='test') return;
+    var c=deck[idx[sCur]]; tPicked=-1; tWrong=true; markChoices(c);
+    $('sresult').textContent='Here is the answer. This one will come back soon.';
+    sSetFlipped(true); applyGradeRules();
+  }
   function snapFlag(id){ return FLAGS[id]?JSON.parse(JSON.stringify(FLAGS[id])):null; }
   function grade(g){
     if(!sCur||!sPreview||!sFlipped) return;
+    if(SET.style==='test' && tWrong && g!==1) return;
     var id=sCur, now=new Date(), res=sched.repeat(rec(id)?toCard(rec(id)):F.createEmptyCard(now), now)[g];
     var prev=SRS[id]?JSON.parse(JSON.stringify(SRS[id])):null, flagsPrev=snapFlag(id);
     var log=(prev&&prev.log)?prev.log.slice():[];
@@ -570,8 +632,8 @@ window.startApp = function(PAY){
     if(db){ if(u.prev) dbWrite('srs',u.id,u.prev); else db.collection('srs').doc(u.id).delete().then(function(){},function(e){ writeFail=(e&&e.code)||'error'; syncNote(); }); }
     forceId=u.id; showStudy();
   }
-  $('sflip').addEventListener('click',function(){ if(sCur) sSetFlipped(true); });
-  sff.addEventListener('click',function(){ if(sCur) sSetFlipped(true); });
+  $('sflip').addEventListener('click',function(){ if(!sCur) return; if(SET.style==='test') dontKnow(); else sSetFlipped(true); });
+  sff.addEventListener('click',function(){ if(sCur && SET.style!=='test') sSetFlipped(true); });
   document.querySelectorAll('#grades button').forEach(function(b){ b.addEventListener('click',function(){ grade(parseInt(b.getAttribute('data-g'),10)); }); });
   $('undo').addEventListener('click',undo);
   // bury (until the next local midnight) or suspend the card on screen; both can be undone
@@ -592,7 +654,7 @@ window.startApp = function(PAY){
     var o2=document.createElement('option'); o2.value='none'; o2.textContent='Cards with no chapter filled in'; sel.appendChild(o2);
     sel.value=cur; if(sel.value!==cur){ SET.scope='all'; sel.value='all'; }
   }
-  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; $('revcap').value=SET.reviewCap; $('leechat').value=SET.leechAt; $('fuzz').value=SET.fuzz===false?'0':'1'; $('fsw').value=Array.isArray(SET.w)?SET.w.join(', '):''; renderScope(); }
+  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; $('cstyle').value=SET.style||'answer'; $('revcap').value=SET.reviewCap; $('leechat').value=SET.leechAt; $('fuzz').value=SET.fuzz===false?'0':'1'; $('fsw').value=Array.isArray(SET.w)?SET.w.join(', '):''; renderScope(); }
   function saveWeights(){
     var raw=$('fsw').value.trim(), msg=$('fswmsg');
     if(!raw){ delete SET.w; lsSet(LS.set,SET); mkSched(); msg.textContent='Using the default weights.'; showStudy(); return; }
@@ -604,11 +666,11 @@ window.startApp = function(PAY){
   $('fswsave').addEventListener('click',saveWeights);
   $('fswreset').addEventListener('click',function(){ $('fsw').value=''; saveWeights(); });
   function saveSettings(){
-    SET.newPerDay=Math.max(0,Math.min(N,parseInt($('newperday').value,10)||0)); SET.retention=parseFloat($('retention').value)||0.9; SET.order=$('neworder').value; SET.scope=$('scope').value;
+    SET.newPerDay=Math.max(0,Math.min(N,parseInt($('newperday').value,10)||0)); SET.retention=parseFloat($('retention').value)||0.9; SET.order=$('neworder').value; SET.scope=$('scope').value; SET.style=$('cstyle').value;
     SET.reviewCap=Math.max(0,Math.min(9999,parseInt($('revcap').value,10)||0)); SET.leechAt=Math.max(0,Math.min(99,parseInt($('leechat').value,10)||0)); SET.fuzz=$('fuzz').value!=='0';
     lsSet(LS.set,SET); mkSched(); if(db) dbWrite('settings','main',SET); showStudy();
   }
-  ['newperday','retention','neworder','scope','revcap','leechat','fuzz'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
+  ['newperday','retention','neworder','scope','cstyle','revcap','leechat','fuzz'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
 
   /* ---------- BROWSE view ---------- */
   var bview=[], bpos=0, bFlipped=false;
@@ -740,8 +802,8 @@ window.startApp = function(PAY){
   document.addEventListener('keydown',function(e){
     var t=e.target&&e.target.tagName; if(t==='INPUT'||t==='SUMMARY'||t==='SELECT'||t==='TEXTAREA') return;
     if(TAB==='study'){
-      if(e.key===' '||e.key==='Enter'){ if(t==='BUTTON'&&e.key==='Enter') return; e.preventDefault(); if(sCur&&!sFlipped) sSetFlipped(true); }
-      else if(/^[1-4]$/.test(e.key)){ if(sFlipped) grade(parseInt(e.key,10)); }
+      if(e.key===' '||e.key==='Enter'){ if(t==='BUTTON'&&e.key==='Enter') return; e.preventDefault(); if(sCur&&!sFlipped&&SET.style!=='test') sSetFlipped(true); }
+      else if(/^[1-4]$/.test(e.key)){ if(sFlipped) grade(parseInt(e.key,10)); else if(SET.style==='test'&&sCur) pickChoice(parseInt(e.key,10)-1); }
       else if(e.key==='u'||e.key==='U') undo();
     } else if(TAB==='browse'){
       if(e.key==='ArrowRight') bgo(1); else if(e.key==='ArrowLeft') bgo(-1);
