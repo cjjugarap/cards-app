@@ -79,6 +79,9 @@ button.btn:disabled{opacity:.4;cursor:default}
 .choice.bad{background:var(--again-soft);border-color:var(--again);color:var(--again);opacity:1}
 #sresult{font-size:.9rem;font-weight:600;margin:8px 0 0}
 #sresult:empty{display:none}
+.hook{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px;cursor:default}
+.hook textarea{font:inherit;font-size:16px;line-height:1.35;width:100%;min-height:84px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);padding:8px;resize:vertical}
+.hook .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sub{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.8rem;color:var(--muted)}
 .sub button{font:inherit;font-size:.8rem;min-height:36px;padding:0 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
 .sub button:disabled{opacity:.4;cursor:default}
@@ -139,6 +142,8 @@ img{max-width:100%}
   <header><h1>Cards</h1><span id="count" aria-live="polite"></span></header>
   <div id="upd" class="warn" hidden role="status"><span>A new version is ready.</span>
     <div class="row" style="margin-top:6px"><button type="button" class="btn" id="updgo">Reload now</button><button type="button" class="btn" id="updlater">Later</button></div></div>
+  <div id="brk" class="warn" hidden role="status"><span id="brktext"></span>
+    <div class="row" style="margin-top:6px"><button type="button" class="btn" id="brkdone">I took a break</button><button type="button" class="btn" id="brkgo">Keep going</button></div></div>
   <div class="tabs" role="tablist" aria-label="View">
     <button type="button" role="tab" id="tab-study" aria-selected="true" aria-controls="v-study">Study</button>
     <button type="button" role="tab" id="tab-browse" aria-selected="false" aria-controls="v-browse">Browse</button>
@@ -166,6 +171,8 @@ img{max-width:100%}
           <label>Suspend after lapses<input type="number" id="leechat" inputmode="numeric" min="0" max="99" step="1"></label>
         </div>
         <label>Interval fuzz<select id="fuzz"><option value="1">On</option><option value="0">Off</option></select></label>
+        <label>Break reminder<select id="brkmin"><option value="0">Off</option><option value="25">After 25 minutes of studying</option><option value="35">After 35 minutes of studying</option><option value="40">After 40 minutes of studying</option></select></label>
+        <p class="lstat">The reminder counts time spent answering cards; a pause longer than 3 minutes is not counted. It never blocks you.</p>
         <p class="lstat">0 means no review limit, and no leech rule. A leech is a card you keep failing: after that many lapses it is suspended and listed under Stats. Fuzz nudges long intervals by a day or so so cards graded together do not all return together; the interval shown on a button can differ from the real one by that much.</p>
         <p>Defaults (20 new a day, 90% target recall, learning steps 1 and 10 minutes) are Anki&rsquo;s defaults for its FSRS scheduler. Scheduling is done by the open-source FSRS library <span class="mono">ts-fsrs 5.4.2</span> with its published default weights unless you paste your own below. Weights are applied to future grades only.</p>
         <label>FSRS weights (optional)<textarea id="fsw" rows="3" spellcheck="false" aria-label="FSRS weights" placeholder="21 numbers separated by commas. Leave empty for the defaults."></textarea></label>
@@ -190,6 +197,7 @@ img{max-width:100%}
           <span class="label" id="sothlbl">Other choices on this question</span>
           <ul class="others" id="sothers"></ul>
           <p class="qrecall" id="sqrecall"></p>
+          <div class="hook" data-hook="s"></div>
           <div class="loc" data-loc="s"></div>
         </div>
       </div>
@@ -239,6 +247,7 @@ img{max-width:100%}
           <ul class="others" id="others"></ul>
           <p class="qrecall" id="qrecall"></p>
           <p class="qrecall" id="bsched"></p>
+          <div class="hook" data-hook="b"></div>
           <div class="loc" data-loc="b"></div>
         </div>
       </div>
@@ -304,8 +313,9 @@ img{max-width:100%}
 
   <footer>
     <p>One card for each distinct question in the source bank, worded as it appeared. Chapter, heading and page start empty; you fill them in on the back of a card. A suggested chapter, where the study-guide text supports one, is shown there as a suggestion only.</p>
-    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v22</b> &middot; 4 Nov 2026 &middot; what changed</summary>
+    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v23</b> &middot; 4 Nov 2026 &middot; what changed</summary>
       <ul class="log">
+        <li><b>v23</b> Memory hook note on the back of every card (a starter idea you can edit, kept in your backup), a nudge to use it when you miss a card you knew, and an optional break reminder.</li>
         <li><b>v22</b> Checks for a new version when you come back to the app and every 30 minutes, and shows a Reload banner when one is ready.</li>
         <li><b>v21</b> Card style setting: answer only (new default), answer with other choices, or test mode with shuffled choices on the front.</li>
         <li><b>v20</b> Daily review limit, leech suspend, bury until tomorrow, manual suspend with an unsuspend list, interval fuzz.</li>
@@ -334,19 +344,25 @@ window.startApp = function(PAY){
   function startOfDay(d){ d=new Date(d); d.setHours(0,0,0,0); return d; }
 
   /* ---------- persistence: localStorage cache + page db ---------- */
-  var LS = {pos:'cards-cards-pos', loc:'cards-loc-local', srs:'cards-srs-v1', set:'cards-srs-settings', lastbk:'cards-lastbackup', snooze:'cards-bk-snooze', flags:'cards-flags'};
+  var LS = {pos:'cards-cards-pos', loc:'cards-loc-local', srs:'cards-srs-v1', set:'cards-srs-settings', lastbk:'cards-lastbackup', snooze:'cards-bk-snooze', flags:'cards-flags', hooks:'cards-hooks'};
   function lsGet(k,def){ try{ var v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } }
   function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
 
   var LOC = lsGet(LS.loc,{});                 // card id -> {chapter, heading, page}
   var SRS = lsGet(LS.srs,{});                 // card id -> serialized FSRS card + log
-  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', reviewCap:200, leechAt:8, fuzz:true, style:'answer', seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
+  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', reviewCap:200, leechAt:8, fuzz:true, style:'answer', breakMin:0, seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
   // card id -> {susp:bool, leech:bool, bury:ms epoch the burial ends, at:ISO of last change}; an entry with susp false is kept so a restore does not undo an unsuspend
   var FLAGS = lsGet(LS.flags,{});
   function setFlag(id,patch){ var f=Object.assign({},FLAGS[id]||{},patch,{at:new Date().toISOString()}); FLAGS[id]=f; lsSet(LS.flags,FLAGS); }
   function isSusp(id){ var f=FLAGS[id]; return !!(f&&f.susp); }
   function isBuried(id){ var f=FLAGS[id]; return !!(f&&f.bury&&f.bury>Date.now()); }
   function blocked(id){ return isSusp(id)||isBuried(id); }
+  // memory hooks: a picture or story you attach to a card. The deck can ship a starter in position 3 of each card;
+  // your own text is stored here and wins. {text, at, reset}: reset=true means "back to the starter" (kept so a restore does not undo it)
+  var HOOKS = lsGet(LS.hooks,{});
+  function hookSug(id){ var c=deck[idx[id]]; return (c && typeof c[3]==='string') ? c[3] : ''; }
+  function hookMine(id){ var h=HOOKS[id]; return !!(h && !h.reset); }
+  function hookText(id){ return hookMine(id) ? HOOKS[id].text : hookSug(id); }
   /* ---------- backup reminder ---------- */
   var BK_DAYS = 7;
   function lastBackup(){ var t=lsGet(LS.lastbk,null); return t?new Date(t).getTime():null; }
@@ -508,6 +524,38 @@ window.startApp = function(PAY){
   });
   function curLocId(p){ return p==='s' ? sCur : (bview.length?cid(bview[bpos]):null); }
 
+  /* ---------- memory hook box (two copies, one per view) ---------- */
+  document.querySelectorAll('.hook').forEach(function(box){
+    var p=box.getAttribute('data-hook');
+    box.innerHTML='<span class="label">My memory hook</span>'
+      +'<textarea id="'+p+'hk" rows="3" spellcheck="true" aria-label="Memory hook for this card" placeholder="Picture it: big, silly, moving, with your senses."></textarea>'
+      +'<div class="row"><button type="button" class="btn" id="'+p+'hkreset" hidden>Use the starter again</button><span class="lstat" id="'+p+'hkstat" aria-live="polite"></span></div>';
+  });
+  function showHook(p,id){
+    $(p+'hk').value=hookText(id); $(p+'hkreset').hidden=!(hookMine(id) && hookSug(id));
+    $(p+'hkstat').textContent = hookMine(id) ? 'Yours.' : (hookSug(id) ? 'Starter idea. Edit it to make it yours.' : 'Nothing yet. Make the answer a picture.');
+  }
+  function saveHook(p,id,val){
+    val=val.trim(); var sug=hookSug(id);
+    if(!hookMine(id) && val===sug) return;                       // untouched starter
+    if(val===sug){ HOOKS[id]={text:'',at:new Date().toISOString(),reset:true}; }
+    else HOOKS[id]={text:val,at:new Date().toISOString()};
+    lsSet(LS.hooks,HOOKS);
+    if(curLocId(p)===id){ $(p+'hkstat').textContent='Saved. Yours.'; $(p+'hkreset').hidden=!(hookMine(id)&&sug); }
+  }
+  var hookTimer={};
+  ['s','b'].forEach(function(p){
+    $(p+'hk').addEventListener('input',function(){
+      var id=curLocId(p); if(!id) return; var val=this.value;       // capture now: the card can change before the timer fires
+      clearTimeout(hookTimer[p]); hookTimer[p]=setTimeout(function(){ saveHook(p,id,val); },500);
+    });
+    $(p+'hk').addEventListener('blur',function(){ var id=curLocId(p); if(!id) return; clearTimeout(hookTimer[p]); saveHook(p,id,this.value); });
+    $(p+'hkreset').addEventListener('click',function(){
+      var id=curLocId(p); if(!id) return;
+      HOOKS[id]={text:'',at:new Date().toISOString(),reset:true}; lsSet(LS.hooks,HOOKS); showHook(p,id);
+    });
+  });
+
   /* ---------- STUDY view ---------- */
   var sCur=null, sFlipped=false, sPreview=null, undoStack=[];
   var scard=$('scard'), sff=$('sff'), sfb=$('sfb');
@@ -552,10 +600,11 @@ window.startApp = function(PAY){
     }
     if(forceId){ id=forceId; forceId=null; }
     sCur=id; $('sdone').hidden=true; $('sstage').hidden=false; $('sactions').hidden=false;
+    if(!lastAct || Date.now()-lastAct>=GAP) lastAct=Date.now();
     var c=deck[idx[id]];
     $('sqs').textContent=c[0]; $('sstate').textContent=stateLabel(id);
     var isTest=SET.style==='test', showOth=SET.style==='choices';
-    fillBack($('sans'),$('sothers'),$('sqrecall'),c,showOth); showLoc('s',id);
+    fillBack($('sans'),$('sothers'),$('sqrecall'),c,showOth); showLoc('s',id); showHook('s',id);
     $('sothlbl').hidden=$('sothers').hidden=!showOth;
     scard.classList.toggle('t',isTest); $('sresult').textContent='';
     $('sflip').textContent = isTest ? 'I don’t know' : 'Show answer';
@@ -568,6 +617,19 @@ window.startApp = function(PAY){
     $('count').textContent='card '+(idx[id]+1);
   }
   var forceId=null, pendingNote='';
+  /* ---------- break reminder: counts time between answers, ignoring pauses over 3 minutes; never blocks ---------- */
+  var studyMs=0, lastAct=0, GAP=3*60000;
+  function trackStudy(){
+    var t=Date.now(); if(lastAct && t-lastAct<GAP) studyMs+=t-lastAct; lastAct=t;
+    var m=SET.breakMin|0;
+    if(m>0 && studyMs>=m*60000 && $('brk').hidden){
+      $('brktext').textContent='You have been studying for about '+Math.round(studyMs/60000)+' minutes. Stand up, walk, drink some water, then come back to it.';
+      $('brk').hidden=false;
+    }
+  }
+  function endBreakNudge(){ studyMs=0; lastAct=Date.now(); $('brk').hidden=true; }
+  $('brkdone').addEventListener('click',function(){ studyMs=0; lastAct=0; $('brk').hidden=true; });
+  $('brkgo').addEventListener('click',endBreakNudge);
   /* ---------- test mode: choices on the front ---------- */
   var tOrder=[], tPicked=-1, tWrong=false;   // tOrder: shuffled original choice indexes; tPicked: original index picked (-1 = none)
   function renderChoices(c){
@@ -611,6 +673,7 @@ window.startApp = function(PAY){
   function grade(g){
     if(!sCur||!sPreview||!sFlipped) return;
     if(SET.style==='test' && tWrong && g!==1) return;
+    trackStudy();
     var id=sCur, now=new Date(), res=sched.repeat(rec(id)?toCard(rec(id)):F.createEmptyCard(now), now)[g];
     var prev=SRS[id]?JSON.parse(JSON.stringify(SRS[id])):null, flagsPrev=snapFlag(id);
     var log=(prev&&prev.log)?prev.log.slice():[];
@@ -622,6 +685,8 @@ window.startApp = function(PAY){
     if(la>0 && g===1 && prev && prev.state===ST.Review && res.card.lapses>=la && !(FLAGS[id]&&FLAGS[id].leech)){
       setFlag(id,{susp:true,leech:true});
       pendingNote='Card '+(idx[id]+1)+' was suspended as a leech after '+res.card.lapses+' lapses. It is listed under Stats, where you can unsuspend it.';
+    } else if(g===1 && prev && prev.state===ST.Review){
+      pendingNote='Missed one you knew. When it comes back, look at its memory hook on the back, or make the answer a picture: big, silly, moving, using your senses.';
     }
     undoStack.push({id:id, prev:prev, flagsPrev:flagsPrev}); if(undoStack.length>50) undoStack.shift();
     dbWrite('srs',id,SRS[id]);
@@ -657,7 +722,7 @@ window.startApp = function(PAY){
     var o2=document.createElement('option'); o2.value='none'; o2.textContent='Cards with no chapter filled in'; sel.appendChild(o2);
     sel.value=cur; if(sel.value!==cur){ SET.scope='all'; sel.value='all'; }
   }
-  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; $('cstyle').value=SET.style||'answer'; $('revcap').value=SET.reviewCap; $('leechat').value=SET.leechAt; $('fuzz').value=SET.fuzz===false?'0':'1'; $('fsw').value=Array.isArray(SET.w)?SET.w.join(', '):''; renderScope(); }
+  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; $('cstyle').value=SET.style||'answer'; $('brkmin').value=String(SET.breakMin||0); $('revcap').value=SET.reviewCap; $('leechat').value=SET.leechAt; $('fuzz').value=SET.fuzz===false?'0':'1'; $('fsw').value=Array.isArray(SET.w)?SET.w.join(', '):''; renderScope(); }
   function saveWeights(){
     var raw=$('fsw').value.trim(), msg=$('fswmsg');
     if(!raw){ delete SET.w; lsSet(LS.set,SET); mkSched(); msg.textContent='Using the default weights.'; showStudy(); return; }
@@ -669,11 +734,11 @@ window.startApp = function(PAY){
   $('fswsave').addEventListener('click',saveWeights);
   $('fswreset').addEventListener('click',function(){ $('fsw').value=''; saveWeights(); });
   function saveSettings(){
-    SET.newPerDay=Math.max(0,Math.min(N,parseInt($('newperday').value,10)||0)); SET.retention=parseFloat($('retention').value)||0.9; SET.order=$('neworder').value; SET.scope=$('scope').value; SET.style=$('cstyle').value;
+    SET.newPerDay=Math.max(0,Math.min(N,parseInt($('newperday').value,10)||0)); SET.retention=parseFloat($('retention').value)||0.9; SET.order=$('neworder').value; SET.scope=$('scope').value; SET.style=$('cstyle').value; SET.breakMin=parseInt($('brkmin').value,10)||0; if(!SET.breakMin) $('brk').hidden=true;
     SET.reviewCap=Math.max(0,Math.min(9999,parseInt($('revcap').value,10)||0)); SET.leechAt=Math.max(0,Math.min(99,parseInt($('leechat').value,10)||0)); SET.fuzz=$('fuzz').value!=='0';
     lsSet(LS.set,SET); mkSched(); if(db) dbWrite('settings','main',SET); showStudy();
   }
-  ['newperday','retention','neworder','scope','cstyle','revcap','leechat','fuzz'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
+  ['newperday','retention','neworder','scope','cstyle','revcap','leechat','fuzz','brkmin'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
 
   /* ---------- BROWSE view ---------- */
   var bview=[], bpos=0, bFlipped=false;
@@ -691,7 +756,7 @@ window.startApp = function(PAY){
       $('count').textContent='0 matches'; bSetFlipped(false); fit($('qs'),$('q'),$('qbox'),16,22); return; }
     var i=bview[bpos], c=deck[i], id=cid(i);
     $('qs').textContent=c[0]; $('bstate').textContent=stateLabel(id);
-    fillBack($('ans'),$('others'),$('qrecall'),c); $('bsched').textContent=dueText(id); showLoc('b',id);
+    fillBack($('ans'),$('others'),$('qrecall'),c); $('bsched').textContent=dueText(id); showLoc('b',id); showHook('b',id);
     $('count').textContent = bview.length===N ? fmt(i+1)+' / '+fmt(N) : (bpos+1)+' of '+fmt(bview.length)+' matches';
     bSetFlipped(false); fit($('qs'),$('q'),$('qbox'),17,28); lsSet(LS.pos,i);
   }
@@ -823,7 +888,7 @@ window.startApp = function(PAY){
   dbState='off'; syncNote();
 
   /* ---------- backup + lock ---------- */
-  function backupText(){ return JSON.stringify({app:'cards-cards',v:1,at:new Date().toISOString(),srs:SRS,loc:LOC,set:SET,flags:FLAGS}); }
+  function backupText(){ return JSON.stringify({app:'cards-cards',v:1,at:new Date().toISOString(),srs:SRS,loc:LOC,set:SET,flags:FLAGS,hooks:HOOKS}); }
   function today(){ return new Date().toISOString().slice(0,10); }
   /* iOS: the share sheet offers "Save to Files"; elsewhere fall back to a normal download */
   function saveFile(name,type,text){
@@ -874,7 +939,8 @@ window.startApp = function(PAY){
     var n=0; Object.keys(o.srs).forEach(function(id){ if(!(id in idx)) return; var r=o.srs[id], l=SRS[id]; if(!l||(r.last_review||'')>(l.last_review||'')){ SRS[id]=r; n++; } });
     var m=0; Object.keys(o.loc||{}).forEach(function(id){ if(!(id in idx)) return; var r=o.loc[id], l=LOC[id]; if(!l||(r.updated||'')>(l.updated||'')){ LOC[id]=r; m++; } });
     Object.keys(o.flags||{}).forEach(function(id){ if(!(id in idx)) return; var r=o.flags[id], l=FLAGS[id]; if(!l||(r.at||'')>(l.at||'')) FLAGS[id]=r; });
-    lsSet(LS.srs,SRS); lsSet(LS.loc,LOC); lsSet(LS.flags,FLAGS); undoStack=[];
+    Object.keys(o.hooks||{}).forEach(function(id){ if(!(id in idx)) return; var r=o.hooks[id], l=HOOKS[id]; if(!l||(r.at||'')>(l.at||'')) HOOKS[id]=r; });
+    lsSet(LS.srs,SRS); lsSet(LS.loc,LOC); lsSet(LS.flags,FLAGS); lsSet(LS.hooks,HOOKS); undoStack=[];
     $('bkmsg').textContent='Restored '+n+' card'+(n===1?'':'s')+' and '+m+' chapter entr'+(m===1?'y':'ies')+'.'; renderStats(); showStudy();
   }
   $('forget').addEventListener('click',function(){ window.forgetKey().then(function(){ location.reload(); }); });
