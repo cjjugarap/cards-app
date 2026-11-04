@@ -146,6 +146,12 @@ img{max-width:100%}
           <label>Target recall<select id="retention"><option value="0.8">80%</option><option value="0.85">85%</option><option value="0.9">90%</option><option value="0.95">95%</option></select></label>
         </div>
         <label>New-card order<select id="neworder"><option value="bank">Deck order (card 1 onward)</option><option value="random">Shuffled</option></select></label>
+        <div class="two">
+          <label>Max reviews per day<input type="number" id="revcap" inputmode="numeric" min="0" max="9999" step="1"></label>
+          <label>Suspend after lapses<input type="number" id="leechat" inputmode="numeric" min="0" max="99" step="1"></label>
+        </div>
+        <label>Interval fuzz<select id="fuzz"><option value="1">On</option><option value="0">Off</option></select></label>
+        <p class="lstat">0 means no review limit, and no leech rule. A leech is a card you keep failing: after that many lapses it is suspended and listed under Stats. Fuzz nudges long intervals by a day or so so cards graded together do not all return together; the interval shown on a button can differ from the real one by that much.</p>
         <p>Defaults (20 new a day, 90% target recall, learning steps 1 and 10 minutes) are Anki&rsquo;s defaults for its FSRS scheduler. Scheduling is done by the open-source FSRS library <span class="mono">ts-fsrs 5.4.2</span> with its published default weights unless you paste your own below. Weights are applied to future grades only.</p>
         <label>FSRS weights (optional)<textarea id="fsw" rows="3" spellcheck="false" aria-label="FSRS weights" placeholder="21 numbers separated by commas. Leave empty for the defaults."></textarea></label>
         <div class="row"><button type="button" class="btn" id="fswsave">Save weights</button><button type="button" class="btn" id="fswreset">Use defaults</button></div>
@@ -181,6 +187,8 @@ img{max-width:100%}
       <button type="button" class="g3" data-g="3"><b>Good</b><small id="i3"></small></button>
       <button type="button" class="g4" data-g="4"><b>Easy</b><small id="i4"></small></button>
     </div>
+    <div class="row" id="sactions" hidden><button type="button" class="btn" id="sbury">Bury until tomorrow</button><button type="button" class="btn" id="ssusp">Suspend</button></div>
+    <p class="lstat" id="snote" role="status"></p>
     <p class="lstat" id="sync"></p>
   </section>
 
@@ -256,6 +264,11 @@ img{max-width:100%}
       <ol id="leech" style="margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px;font-size:.88rem"></ol>
     </div>
     <div class="panel">
+      <h2>Suspended cards</h2>
+      <p class="lstat" id="suspnote"></p>
+      <ol id="susplist" style="margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:8px;font-size:.88rem"></ol>
+    </div>
+    <div class="panel">
       <h2>Where your progress is kept</h2>
       <p class="lstat" id="where"></p>
       <div class="bk"><h2 style="margin-top:6px">Backup</h2>
@@ -274,8 +287,9 @@ img{max-width:100%}
 
   <footer>
     <p>One card for each distinct question in the source bank, worded as it appeared. Chapter, heading and page start empty; you fill them in on the back of a card. A suggested chapter, where the study-guide text supports one, is shown there as a suggestion only.</p>
-    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v19</b> &middot; 4 Nov 2026 &middot; what changed</summary>
+    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v20</b> &middot; 4 Nov 2026 &middot; what changed</summary>
       <ul class="log">
+        <li><b>v20</b> Daily review limit, leech suspend, bury until tomorrow, manual suspend with an unsuspend list, interval fuzz.</li>
         <li><b>v19</b> Save and restore backups as a file, backup reminder after 7 days, review-log CSV export, persistent-storage status, optional custom FSRS weights.</li>
         <li><b>v18</b> Offline copy. Cards are stored encrypted; the passphrase unlocks them on this device and the app then works with no connection. Progress is kept on this device only, with a copy-and-restore backup.</li>
         <li><b>v17</b> Spaced repetition. Study tab with Again / Hard / Good / Easy, each showing the interval it would set; a due queue (learning, then due reviews, then new cards up to the daily limit); undo; a Stats tab with a 30-day forecast, recall rate, per-chapter table and most-forgotten list. Scheduling by the FSRS library ts-fsrs 5.4.2 at its default weights. Progress saved with the page, and on this device as a fallback.</li>
@@ -301,13 +315,19 @@ window.startApp = function(PAY){
   function startOfDay(d){ d=new Date(d); d.setHours(0,0,0,0); return d; }
 
   /* ---------- persistence: localStorage cache + page db ---------- */
-  var LS = {pos:'cards-cards-pos', loc:'cards-loc-local', srs:'cards-srs-v1', set:'cards-srs-settings', lastbk:'cards-lastbackup', snooze:'cards-bk-snooze'};
+  var LS = {pos:'cards-cards-pos', loc:'cards-loc-local', srs:'cards-srs-v1', set:'cards-srs-settings', lastbk:'cards-lastbackup', snooze:'cards-bk-snooze', flags:'cards-flags'};
   function lsGet(k,def){ try{ var v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } }
   function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
 
   var LOC = lsGet(LS.loc,{});                 // card id -> {chapter, heading, page}
   var SRS = lsGet(LS.srs,{});                 // card id -> serialized FSRS card + log
-  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
+  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', reviewCap:200, leechAt:8, fuzz:true, seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
+  // card id -> {susp:bool, leech:bool, bury:ms epoch the burial ends, at:ISO of last change}; an entry with susp false is kept so a restore does not undo an unsuspend
+  var FLAGS = lsGet(LS.flags,{});
+  function setFlag(id,patch){ var f=Object.assign({},FLAGS[id]||{},patch,{at:new Date().toISOString()}); FLAGS[id]=f; lsSet(LS.flags,FLAGS); }
+  function isSusp(id){ var f=FLAGS[id]; return !!(f&&f.susp); }
+  function isBuried(id){ var f=FLAGS[id]; return !!(f&&f.bury&&f.bury>Date.now()); }
+  function blocked(id){ return isSusp(id)||isBuried(id); }
   /* ---------- backup reminder ---------- */
   var BK_DAYS = 7;
   function lastBackup(){ var t=lsGet(LS.lastbk,null); return t?new Date(t).getTime():null; }
@@ -346,7 +366,7 @@ window.startApp = function(PAY){
   function weightsOk(w){ try{ F.checkParameters(w); return true; }catch(e){ return false; } }
   function mkSched(){
     if(!F) return;
-    var p={request_retention: SET.retention, enable_fuzz:false};
+    var p={request_retention: SET.retention, enable_fuzz: SET.fuzz!==false};
     if(Array.isArray(SET.w) && SET.w.length && weightsOk(SET.w)) p.w=SET.w;
     sched = F.fsrs(F.generatorParameters(p));
   }
@@ -374,20 +394,25 @@ window.startApp = function(PAY){
   function reviewsToday(){ var k=dayKey(new Date()), n=0; for(var id in SRS){ var l=SRS[id].log||[]; for(var j=0;j<l.length;j++) if(dayKey(l[j][0])===k) n++; } return n; }
   function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; var t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
   function newOrder(){ var ids=[]; for(var i=0;i<N;i++) ids.push(cid(i)); if(SET.order==='random'){ var r=mulberry(SET.seed); for(var k=ids.length-1;k>0;k--){ var j=Math.floor(r()*(k+1)); var t=ids[k]; ids[k]=ids[j]; ids[j]=t; } } return ids; }
-  var queue = {learn:[], due:[], fresh:[], laterLearn:[]};
+  // reviews answered today on cards that were in the Review state (relearning steps do not count against the cap)
+  function reviewsAnsweredToday(){ var k=dayKey(new Date()), n=0; for(var id in SRS){ var l=SRS[id].log||[]; for(var j=0;j<l.length;j++) if(e2(l[j])&&dayKey(l[j][0])===k) n++; } return n; }
+  function e2(e){ return e[2]===ST.Review; }
+  var queue = {learn:[], due:[], fresh:[], laterLearn:[], waiting:0};
   function buildQueue(){
     var now=Date.now(), eod=startOfDay(now).getTime()+DAY;
     var learn=[], due=[], later=[], fresh=[];
     for(var id in SRS){
-      if(!inScope(id)) continue;
+      if(!inScope(id) || blocked(id)) continue;
       var r=SRS[id], d=new Date(r.due).getTime();
       if(r.state===ST.Learning||r.state===ST.Relearning){ if(d<=now+LEARN_AHEAD) learn.push([d,id]); else later.push([d,id]); }
       else if(r.state===ST.Review){ if(d<eod) due.push([d,id]); }
     }
     learn.sort(function(a,b){return a[0]-b[0]}); due.sort(function(a,b){return a[0]-b[0]}); later.sort(function(a,b){return a[0]-b[0]});
     var allow = Math.max(0, (SET.newPerDay|0) - newToday());
-    if(allow>0){ var ord=newOrder(); for(var k=0;k<ord.length && fresh.length<allow;k++){ var nid=ord[k]; if(!SRS[nid] && inScope(nid)) fresh.push(nid); } }
-    queue={learn:learn.map(function(x){return x[1]}), due:due.map(function(x){return x[1]}), fresh:fresh, laterLearn:later.map(function(x){return x[1]})};
+    if(allow>0){ var ord=newOrder(); for(var k=0;k<ord.length && fresh.length<allow;k++){ var nid=ord[k]; if(!SRS[nid] && inScope(nid) && !blocked(nid)) fresh.push(nid); } }
+    var waiting=0, cap=SET.reviewCap|0;
+    if(cap>0){ var room=Math.max(0, cap-reviewsAnsweredToday()); if(due.length>room){ waiting=due.length-room; due=due.slice(0,room); } }
+    queue={learn:learn.map(function(x){return x[1]}), due:due.map(function(x){return x[1]}), fresh:fresh, laterLearn:later.map(function(x){return x[1]}), waiting:waiting};
   }
   function nextId(){
     // learning cards that are due now first; then due reviews; then new; then learning cards within learn-ahead already included.
@@ -481,12 +506,13 @@ window.startApp = function(PAY){
     var now=Date.now(), learnDue=queue.learn.length+queue.laterLearn.length;
     $('cN').textContent=queue.fresh.length; $('cL').textContent=learnDue; $('cR').textContent=queue.due.length;
     $('undo').disabled=!undoStack.length;
+    $('cR').parentNode.title = queue.waiting ? 'Due reviews ('+queue.waiting+' more waiting past the daily limit)' : 'Due reviews';
   }
   function showStudy(){
-    updateBkWarn(); buildQueue(); renderCounts();
+    updateBkWarn(); buildQueue(); renderCounts(); $('snote').textContent=pendingNote; pendingNote='';
     var id=nextId();
     if(!id || !sched){
-      sCur=null; $('sstage').hidden=true; $('sflipnav').hidden=true; $('grades').hidden=true;
+      sCur=null; $('sstage').hidden=true; $('sflipnav').hidden=true; $('grades').hidden=true; $('sactions').hidden=true;
       var box=$('sdone'); box.hidden=false; box.innerHTML='';
       var p1=document.createElement('p'); p1.className='big';
       var later=queue.laterLearn;
@@ -499,14 +525,14 @@ window.startApp = function(PAY){
       } else {
         var dn=newToday(), rv=reviewsToday();
         p1.textContent='Done for today.'; box.appendChild(p1);
-        var p3=document.createElement('p'); p3.textContent=rv+' answer'+(rv===1?'':'s')+' today, '+dn+' new card'+(dn===1?'':'s')+' started. '+(SET.scope!=='all'?'Only cards in the chosen scope are counted. ':'')+'Raise the new-cards-per-day limit in Study options to keep going.'; box.appendChild(p3);
+        var p3=document.createElement('p'); p3.textContent=rv+' answer'+(rv===1?'':'s')+' today, '+dn+' new card'+(dn===1?'':'s')+' started. '+(SET.scope!=='all'?'Only cards in the chosen scope are counted. ':'')+(queue.waiting?queue.waiting+' more review'+(queue.waiting===1?' is':'s are')+' waiting past your daily limit of '+SET.reviewCap+'; they stay due for tomorrow. ':'')+'Raise the new-cards-per-day or max-reviews limit in Study options to keep going.'; box.appendChild(p3);
         var unseen=0; for(var i=0;i<N;i++) if(!SRS[cid(i)]) unseen++;
         var p4=document.createElement('p'); p4.className='lstat'; p4.textContent=fmt(unseen)+' of '+fmt(N)+' cards not started yet.'; box.appendChild(p4);
       }
       $('count').textContent=''; return;
     }
     if(forceId){ id=forceId; forceId=null; }
-    sCur=id; $('sdone').hidden=true; $('sstage').hidden=false;
+    sCur=id; $('sdone').hidden=true; $('sstage').hidden=false; $('sactions').hidden=false;
     var c=deck[idx[id]];
     $('sqs').textContent=c[0]; $('sstate').textContent=stateLabel(id);
     fillBack($('sans'),$('sothers'),$('sqrecall'),c); showLoc('s',id);
@@ -516,16 +542,23 @@ window.startApp = function(PAY){
     sSetFlipped(false); fit($('sqs'),$('sq'),$('sqbox'),17,28);
     $('count').textContent='card '+(idx[id]+1);
   }
-  var forceId=null;
+  var forceId=null, pendingNote='';
+  function snapFlag(id){ return FLAGS[id]?JSON.parse(JSON.stringify(FLAGS[id])):null; }
   function grade(g){
     if(!sCur||!sPreview||!sFlipped) return;
     var id=sCur, now=new Date(), res=sched.repeat(rec(id)?toCard(rec(id)):F.createEmptyCard(now), now)[g];
-    var prev=SRS[id]?JSON.parse(JSON.stringify(SRS[id])):null;
+    var prev=SRS[id]?JSON.parse(JSON.stringify(SRS[id])):null, flagsPrev=snapFlag(id);
     var log=(prev&&prev.log)?prev.log.slice():[];
     log.push([now.toISOString(), g, res.log.state, res.card.scheduled_days]);
     if(log.length>500) log=log.slice(log.length-500);
     SRS[id]=fromCard(res.card, log); lsSet(LS.srs,SRS);
-    undoStack.push({id:id, prev:prev}); if(undoStack.length>50) undoStack.shift();
+    // leech: Again on a card that was in Review counts as a lapse; at the limit the card is suspended
+    var la=SET.leechAt|0;
+    if(la>0 && g===1 && prev && prev.state===ST.Review && res.card.lapses>=la && !(FLAGS[id]&&FLAGS[id].leech)){
+      setFlag(id,{susp:true,leech:true});
+      pendingNote='Card '+(idx[id]+1)+' was suspended as a leech after '+res.card.lapses+' lapses. It is listed under Stats, where you can unsuspend it.';
+    }
+    undoStack.push({id:id, prev:prev, flagsPrev:flagsPrev}); if(undoStack.length>50) undoStack.shift();
     dbWrite('srs',id,SRS[id]);
     showStudy();
   }
@@ -533,6 +566,7 @@ window.startApp = function(PAY){
     var u=undoStack.pop(); if(!u) return;
     if(u.prev) SRS[u.id]=u.prev; else delete SRS[u.id];
     lsSet(LS.srs,SRS);
+    if('flagsPrev' in u){ if(u.flagsPrev) FLAGS[u.id]=u.flagsPrev; else delete FLAGS[u.id]; lsSet(LS.flags,FLAGS); }
     if(db){ if(u.prev) dbWrite('srs',u.id,u.prev); else db.collection('srs').doc(u.id).delete().then(function(){},function(e){ writeFail=(e&&e.code)||'error'; syncNote(); }); }
     forceId=u.id; showStudy();
   }
@@ -540,6 +574,14 @@ window.startApp = function(PAY){
   sff.addEventListener('click',function(){ if(sCur) sSetFlipped(true); });
   document.querySelectorAll('#grades button').forEach(function(b){ b.addEventListener('click',function(){ grade(parseInt(b.getAttribute('data-g'),10)); }); });
   $('undo').addEventListener('click',undo);
+  // bury (until the next local midnight) or suspend the card on screen; both can be undone
+  function flagCurrent(patch,note){
+    if(!sCur) return; var id=sCur, prev=SRS[id]?JSON.parse(JSON.stringify(SRS[id])):null, flagsPrev=snapFlag(id);
+    setFlag(id,patch); undoStack.push({id:id, prev:prev, flagsPrev:flagsPrev}); if(undoStack.length>50) undoStack.shift();
+    pendingNote='Card '+(idx[id]+1)+' '+note; showStudy();
+  }
+  $('sbury').addEventListener('click',function(){ flagCurrent({bury:startOfDay(Date.now()).getTime()+DAY},'is buried until tomorrow.'); });
+  $('ssusp').addEventListener('click',function(){ flagCurrent({susp:true},'was suspended. It is listed under Stats, where you can unsuspend it.'); });
 
   // settings
   function renderScope(){
@@ -550,7 +592,7 @@ window.startApp = function(PAY){
     var o2=document.createElement('option'); o2.value='none'; o2.textContent='Cards with no chapter filled in'; sel.appendChild(o2);
     sel.value=cur; if(sel.value!==cur){ SET.scope='all'; sel.value='all'; }
   }
-  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; $('fsw').value=Array.isArray(SET.w)?SET.w.join(', '):''; renderScope(); }
+  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; $('revcap').value=SET.reviewCap; $('leechat').value=SET.leechAt; $('fuzz').value=SET.fuzz===false?'0':'1'; $('fsw').value=Array.isArray(SET.w)?SET.w.join(', '):''; renderScope(); }
   function saveWeights(){
     var raw=$('fsw').value.trim(), msg=$('fswmsg');
     if(!raw){ delete SET.w; lsSet(LS.set,SET); mkSched(); msg.textContent='Using the default weights.'; showStudy(); return; }
@@ -563,9 +605,10 @@ window.startApp = function(PAY){
   $('fswreset').addEventListener('click',function(){ $('fsw').value=''; saveWeights(); });
   function saveSettings(){
     SET.newPerDay=Math.max(0,Math.min(N,parseInt($('newperday').value,10)||0)); SET.retention=parseFloat($('retention').value)||0.9; SET.order=$('neworder').value; SET.scope=$('scope').value;
+    SET.reviewCap=Math.max(0,Math.min(9999,parseInt($('revcap').value,10)||0)); SET.leechAt=Math.max(0,Math.min(99,parseInt($('leechat').value,10)||0)); SET.fuzz=$('fuzz').value!=='0';
     lsSet(LS.set,SET); mkSched(); if(db) dbWrite('settings','main',SET); showStudy();
   }
-  ['newperday','retention','neworder','scope'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
+  ['newperday','retention','neworder','scope','revcap','leechat','fuzz'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
 
   /* ---------- BROWSE view ---------- */
   var bview=[], bpos=0, bFlipped=false;
@@ -610,7 +653,21 @@ window.startApp = function(PAY){
 
   /* ---------- STATS view ---------- */
   function kv(el, rows){ el.innerHTML=''; rows.forEach(function(r){ var a=document.createElement('span'); a.textContent=r[0]; var b=document.createElement('span'); b.textContent=r[1]; el.appendChild(a); el.appendChild(b); }); }
+  function renderSusp(){
+    var ol=$('susplist'); ol.innerHTML=''; var n=0, buried=0;
+    Object.keys(FLAGS).forEach(function(id){ if(isBuried(id)) buried++; });
+    Object.keys(FLAGS).filter(isSusp).sort().forEach(function(id){
+      if(!(id in idx)) return; n++;
+      var li=document.createElement('li'), t=document.createElement('span'), q=deck[idx[id]][0];
+      t.textContent='Card '+(idx[id]+1)+(FLAGS[id].leech?' (leech) ':' ')+'· '+(q.length>70?q.slice(0,70)+'…':q)+' ';
+      var b=document.createElement('button'); b.type='button'; b.className='btn'; b.textContent='Unsuspend';
+      b.addEventListener('click',function(){ setFlag(id,{susp:false}); renderSusp(); });
+      li.appendChild(t); li.appendChild(b); ol.appendChild(li);
+    });
+    $('suspnote').textContent = (n?n+' suspended. ':'No suspended cards. ')+(buried?buried+' buried until tomorrow.':'');
+  }
   function renderStats(){
+    renderSusp();
     var now=new Date(), today=dayKey(now), t0=startOfDay(now).getTime();
     var cnt={n:0,l:0,r:0,rl:0}, dueNow=0, lapses=0, perDay=new Array(30).fill(0), overdue=0;
     var revAns=0, revRecalled=0, todayAns=0, todayNew=0, todayAgain=0;
@@ -664,7 +721,7 @@ window.startApp = function(PAY){
     var y=document.createElement('button'); y.type='button'; y.className='btn danger'; y.textContent='Yes, reset';
     var n=document.createElement('button'); n.type='button'; n.className='btn'; n.textContent='Keep my progress';
     y.addEventListener('click',function(){
-      var ids=Object.keys(SRS); SRS={}; lsSet(LS.srs,SRS); undoStack=[];
+      var ids=Object.keys(SRS); SRS={}; lsSet(LS.srs,SRS); FLAGS={}; lsSet(LS.flags,FLAGS); undoStack=[];
       if(db){ ids.forEach(function(id){ db.collection('srs').doc(id).delete().then(function(){},function(){}); }); }
       box.innerHTML=''; var d=document.createElement('span'); d.textContent='Progress cleared.'; box.appendChild(d); renderStats(); showStudy();
     });
@@ -701,7 +758,7 @@ window.startApp = function(PAY){
   dbState='off'; syncNote();
 
   /* ---------- backup + lock ---------- */
-  function backupText(){ return JSON.stringify({app:'cards-cards',v:1,at:new Date().toISOString(),srs:SRS,loc:LOC,set:SET}); }
+  function backupText(){ return JSON.stringify({app:'cards-cards',v:1,at:new Date().toISOString(),srs:SRS,loc:LOC,set:SET,flags:FLAGS}); }
   function today(){ return new Date().toISOString().slice(0,10); }
   /* iOS: the share sheet offers "Save to Files"; elsewhere fall back to a normal download */
   function saveFile(name,type,text){
@@ -751,7 +808,8 @@ window.startApp = function(PAY){
     if(!o||o.app!=='cards-cards'||typeof o.srs!=='object'){ $('bkmsg').textContent='That text is not a backup from this app.'; return; }
     var n=0; Object.keys(o.srs).forEach(function(id){ if(!(id in idx)) return; var r=o.srs[id], l=SRS[id]; if(!l||(r.last_review||'')>(l.last_review||'')){ SRS[id]=r; n++; } });
     var m=0; Object.keys(o.loc||{}).forEach(function(id){ if(!(id in idx)) return; var r=o.loc[id], l=LOC[id]; if(!l||(r.updated||'')>(l.updated||'')){ LOC[id]=r; m++; } });
-    lsSet(LS.srs,SRS); lsSet(LS.loc,LOC); undoStack=[];
+    Object.keys(o.flags||{}).forEach(function(id){ if(!(id in idx)) return; var r=o.flags[id], l=FLAGS[id]; if(!l||(r.at||'')>(l.at||'')) FLAGS[id]=r; });
+    lsSet(LS.srs,SRS); lsSet(LS.loc,LOC); lsSet(LS.flags,FLAGS); undoStack=[];
     $('bkmsg').textContent='Restored '+n+' card'+(n===1?'':'s')+' and '+m+' chapter entr'+(m===1?'y':'ies')+'.'; renderStats(); showStudy();
   }
   $('forget').addEventListener('click',function(){ window.forgetKey().then(function(){ location.reload(); }); });
