@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1f6f5c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Cards"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">
+<title>Cards</title>
+<style>
+/* Phone-first spaced-repetition deck. Three views: Study (FSRS queue), Browse (whole deck), Stats. */
+:root{
+  --bg:#f3f4f2; --panel:#ffffff; --fg:#1d2420; --muted:#5d6862; --line:#d5dad6;
+  --accent:#1f6f5c; --accent-soft:#e1efea; --on-accent:#f3f4f2;
+  --again:#b3462f; --again-soft:#f6e3de; --hard:#a66f14; --hard-soft:#f6ecd6; --good:#1f6f5c; --good-soft:#e1efea; --easy:#2d5f9e; --easy-soft:#e0eaf6;
+  --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141917; --panel:#1d2421; --fg:#e6ebe8; --muted:#97a39c; --line:#33403a;
+  --accent:#5fc3a8; --accent-soft:#1f3a32; --on-accent:#141917;
+  --again:#e58a73; --again-soft:#3b231d; --hard:#dfb15c; --hard-soft:#3a2f17; --good:#5fc3a8; --good-soft:#1f3a32; --easy:#86b1e6; --easy-soft:#1c2c40; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --panel:#1d2421; --fg:#e6ebe8; --muted:#97a39c; --line:#33403a;
+  --accent:#5fc3a8; --accent-soft:#1f3a32; --on-accent:#141917;
+  --again:#e58a73; --again-soft:#3b231d; --hard:#dfb15c; --hard-soft:#3a2f17; --good:#5fc3a8; --good-soft:#1f3a32; --easy:#86b1e6; --easy-soft:#1c2c40; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.45;padding-inline:16px;padding-block:12px}
+main{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+h1{font-size:1rem;font-weight:600;margin:0}
+h2{font-size:.95rem;font-weight:600;margin:0}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+#count{font-family:var(--mono);font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.tabs button{font:inherit;font-size:.9rem;font-weight:500;min-height:42px;border:0;background:transparent;color:var(--muted);cursor:pointer;border-right:1px solid var(--line)}
+.tabs button:last-child{border-right:0}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--on-accent)}
+.view{display:flex;flex-direction:column;gap:12px}
+.card{position:relative;height:min(58vh,480px);height:min(58dvh,480px);min-height:320px;cursor:pointer;border-radius:8px;touch-action:pan-y}
+.card:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.face{position:absolute;inset:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-height:0;transition:opacity .22s ease,visibility .22s}
+.face.back{opacity:0;visibility:hidden;padding:14px;gap:12px;overflow-y:auto;cursor:default}
+.card.flipped .face.back{opacity:1;visibility:visible}
+.card.flipped .face.front{opacity:0;visibility:hidden}
+.label{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.face.front .label{position:absolute;top:14px;left:14px}
+.face.front .state{position:absolute;top:12px;right:14px;font-family:var(--mono);font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.qbox{position:absolute;inset:44px 18px 40px}
+.q{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;font-weight:500;line-height:1.28;text-wrap:balance;font-size:22px;margin:0;overflow-wrap:anywhere}
+.q span{display:block;width:100%}
+.tapnote{position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:.78rem;color:var(--muted)}
+.ans{font-size:1.3rem;font-weight:600;line-height:1.28;color:var(--accent);overflow-wrap:anywhere;background:var(--accent-soft);border-radius:6px;padding:12px}
+.others{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.others li{font-size:.92rem;color:var(--muted);border-top:1px solid var(--line);padding-top:6px;overflow-wrap:anywhere}
+.qrecall{font-size:.85rem;color:var(--muted);margin:0;overflow-wrap:anywhere}
+.loc{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px;cursor:default}
+.loc select,.loc input[type=text],.loc input[type=number],.settings select,.settings input{font:inherit;font-size:16px;min-height:44px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:0 10px;width:100%;min-width:0}
+.loc .row2{display:grid;grid-template-columns:1fr 96px;gap:8px}
+.loc label,.settings label{font-size:.68rem;font-family:var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.sug{font-size:.8rem;color:var(--muted);background:var(--accent-soft);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;overflow-wrap:anywhere}
+.sug button{align-self:flex-start;font:inherit;font-size:.85rem;min-height:40px;padding:0 12px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer}
+.lstat{font-size:.75rem;color:var(--muted);margin:0}
+nav.row{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
+button.btn{font:inherit;font-size:.95rem;font-weight:500;min-height:46px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;padding:0 10px}
+button.btn.main{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+button.btn:disabled{opacity:.4;cursor:default}
+.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.grades button{font:inherit;min-height:56px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 2px}
+.grades button b{font-size:.92rem;font-weight:600}
+.grades button small{font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.grades button.g1{background:var(--again-soft);border-color:var(--again);color:var(--again)}
+.grades button.g2{background:var(--hard-soft);border-color:var(--hard);color:var(--hard)}
+.grades button.g3{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+.grades button.g4{background:var(--easy-soft);border-color:var(--easy);color:var(--easy)}
+.grades button.g1 small,.grades button.g2 small,.grades button.g3 small,.grades button.g4 small{color:inherit;opacity:.85}
+.grades button:disabled{opacity:.35;cursor:default}
+.sub{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.8rem;color:var(--muted)}
+.sub button{font:inherit;font-size:.8rem;min-height:36px;padding:0 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+.sub button:disabled{opacity:.4;cursor:default}
+.counts{display:flex;gap:10px;font-family:var(--mono);font-size:.78rem;font-variant-numeric:tabular-nums}
+.counts span b{font-weight:500}
+.counts .n{color:var(--easy)} .counts .l{color:var(--again)} .counts .r{color:var(--good)}
+.done{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 16px;display:flex;flex-direction:column;gap:10px}
+.done p{margin:0}
+.done .big{font-size:1.15rem;font-weight:600}
+details.tools{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:0 12px}
+details.tools summary{cursor:pointer;font-size:.9rem;font-weight:500;padding:12px 0;min-height:24px}
+.toolrow{display:grid;grid-template-columns:1fr auto;gap:8px;padding-bottom:12px}
+.toolrow label{grid-column:1/-1;font-size:.75rem;color:var(--muted);font-family:var(--mono);letter-spacing:.04em;text-transform:uppercase}
+input[type=search],input[type=number]{font:inherit;font-size:16px;min-height:44px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:0 10px;width:100%;min-width:0}
+.settings{display:flex;flex-direction:column;gap:10px;padding-bottom:12px}
+.settings .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.settings p{margin:0;font-size:.78rem;color:var(--muted)}
+#status,#bstatus{font-size:.8rem;color:var(--muted);padding-bottom:12px;margin:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:.9rem}
+.kv span:nth-child(even){font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.chart{width:100%;height:auto;display:block}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto}
+.danger{border-color:var(--again);color:var(--again);background:transparent}
+.confirm{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.85rem}
+footer{font-size:.72rem;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+footer p{margin:0}
+footer details{border:none}
+.log{margin:4px 0 0;padding-left:1.1rem;display:flex;flex-direction:column;gap:3px;font-size:.75rem}
+.warn{background:var(--hard-soft);color:var(--hard);border:1px solid var(--hard);border-radius:6px;padding:8px 10px;font-size:.82rem}
+@media(prefers-reduced-motion:reduce){.face{transition:none!important}}
+
+/* standalone-page base (the artifact viewer supplied these before) */
+html{background:var(--bg);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;min-height:100vh}
+[hidden]{display:none!important}
+img{max-width:100%}
+.lock{max-width:460px;margin:0 auto;padding-block:12px;display:flex;flex-direction:column;gap:12px}
+.lock .panel{display:flex;flex-direction:column;gap:10px}
+.lock input{font:inherit;font-size:1rem;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.lock .err{color:var(--again);min-height:1.3em;margin:0;font-size:.88rem}
+.bk textarea{font:inherit;font-family:var(--mono);font-size:.72rem;width:100%;min-height:90px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);padding:8px}
+</style></head><body>
+<section class="lock" id="lock" hidden>
+  <h1>Cards</h1>
+  <div class="panel"><h2>Unlock</h2>
+    <p class="lstat" style="margin:0">The cards are stored encrypted. Enter your passphrase once on this device; after that the cards open without it and work with no connection. Open this page once with a connection first so the phone can keep a copy.</p>
+    <label for="pp" class="label">Passphrase</label>
+    <input id="pp" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+    <button type="button" class="btn main" id="unlock">Unlock</button>
+    <p class="err" id="lockerr" role="status" aria-live="polite"></p>
+  </div>
+</section>
+<main id="app" hidden>
+  <header><h1>Cards</h1><span id="count" aria-live="polite"></span></header>
+  <div class="tabs" role="tablist" aria-label="View">
+    <button type="button" role="tab" id="tab-study" aria-selected="true" aria-controls="v-study">Study</button>
+    <button type="button" role="tab" id="tab-browse" aria-selected="false" aria-controls="v-browse">Browse</button>
+    <button type="button" role="tab" id="tab-stats" aria-selected="false" aria-controls="v-stats">Stats</button>
+  </div>
+
+  <!-- ============ STUDY ============ -->
+  <section class="view" id="v-study" role="tabpanel" aria-labelledby="tab-study">
+    <div id="libwarn" class="warn" hidden>The scheduling library did not load, so grading is off. Browse still works. Reload to try again.</div>
+    <details class="tools" id="stools">
+      <summary>Study options</summary>
+      <div class="settings">
+        <label>Study which cards<select id="scope"><option value="all">All cards</option><option value="none">Cards with no chapter filled in</option></select></label>
+        <div class="two">
+          <label>New cards per day<input type="number" id="newperday" inputmode="numeric" min="0" max="1159" step="1"></label>
+          <label>Target recall<select id="retention"><option value="0.8">80%</option><option value="0.85">85%</option><option value="0.9">90%</option><option value="0.95">95%</option></select></label>
+        </div>
+        <label>New-card order<select id="neworder"><option value="bank">Deck order (card 1 onward)</option><option value="random">Shuffled</option></select></label>
+        <p>Defaults (20 new a day, 90% target recall, learning steps 1 and 10 minutes) are Anki&rsquo;s defaults for its FSRS scheduler. Scheduling is done by the open-source FSRS library <span class="mono">ts-fsrs 5.4.2</span> with its published default weights; nothing is tuned to you.</p>
+      </div>
+    </details>
+    <div class="sub">
+      <div class="counts" aria-label="Queue"><span class="n" title="New"><b id="cN">0</b> new</span><span class="l" title="Learning"><b id="cL">0</b> learning</span><span class="r" title="Due reviews"><b id="cR">0</b> due</span></div>
+      <button type="button" id="undo" disabled>Undo</button>
+    </div>
+    <div class="stage" id="sstage">
+      <div class="card" id="scard" tabindex="0" role="group" aria-label="Study card">
+        <div class="face front" id="sff">
+          <span class="label">Question</span><span class="state" id="sstate"></span>
+          <div class="qbox" id="sqbox"><p class="q" id="sq"><span id="sqs"></span></p></div>
+          <span class="tapnote">Tap to show the answer</span>
+        </div>
+        <div class="face back" id="sfb">
+          <span class="label">Answer</span>
+          <div class="ans" id="sans"></div>
+          <span class="label">Other choices on this question</span>
+          <ul class="others" id="sothers"></ul>
+          <p class="qrecall" id="sqrecall"></p>
+          <div class="loc" data-loc="s"></div>
+        </div>
+      </div>
+    </div>
+    <div class="done" id="sdone" hidden></div>
+    <nav class="row" id="sflipnav"><span></span><button type="button" class="btn main" id="sflip">Show answer</button><span></span></nav>
+    <div class="grades" id="grades" hidden>
+      <button type="button" class="g1" data-g="1"><b>Again</b><small id="i1"></small></button>
+      <button type="button" class="g2" data-g="2"><b>Hard</b><small id="i2"></small></button>
+      <button type="button" class="g3" data-g="3"><b>Good</b><small id="i3"></small></button>
+      <button type="button" class="g4" data-g="4"><b>Easy</b><small id="i4"></small></button>
+    </div>
+    <p class="lstat" id="sync"></p>
+  </section>
+
+  <!-- ============ BROWSE ============ -->
+  <section class="view" id="v-browse" role="tabpanel" aria-labelledby="tab-browse" hidden>
+    <details class="tools" id="tools">
+      <summary>Find a card or jump to a number</summary>
+      <div class="toolrow">
+        <label for="search">Search question, options and answer</label>
+        <input type="search" id="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="search">
+        <button type="button" class="btn" id="clear">Clear</button>
+      </div>
+      <div class="toolrow">
+        <label for="jump">Go to card number</label>
+        <input type="number" id="jump" inputmode="numeric" min="1" step="1" placeholder="1">
+        <button type="button" class="btn" id="go">Go</button>
+      </div>
+      <p id="status" aria-live="polite"></p>
+    </details>
+    <div class="stage">
+      <div class="card" id="card" tabindex="0" role="group" aria-label="Flashcard">
+        <div class="face front" id="ff">
+          <span class="label">Question</span><span class="state" id="bstate"></span>
+          <div class="qbox" id="qbox"><p class="q" id="q"><span id="qs"></span></p></div>
+          <span class="tapnote">Tap card to flip &middot; swipe for next</span>
+        </div>
+        <div class="face back" id="fb">
+          <span class="label">Answer</span>
+          <div class="ans" id="ans"></div>
+          <span class="label">Other choices on this question</span>
+          <ul class="others" id="others"></ul>
+          <p class="qrecall" id="qrecall"></p>
+          <p class="qrecall" id="bsched"></p>
+          <div class="loc" data-loc="b"></div>
+        </div>
+      </div>
+    </div>
+    <nav class="row">
+      <button type="button" class="btn" id="prev">Previous</button>
+      <button type="button" class="btn main" id="flip">Show answer</button>
+      <button type="button" class="btn" id="next">Next</button>
+    </nav>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section class="view" id="v-stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
+    <div class="panel">
+      <h2>Today</h2>
+      <div class="kv" id="ktoday"></div>
+    </div>
+    <div class="panel">
+      <h2>Deck</h2>
+      <div class="kv" id="kdeck"></div>
+    </div>
+    <div class="panel">
+      <h2>Due in the next 30 days</h2>
+      <svg class="chart" id="forecast" viewBox="0 0 400 140" role="img" aria-label="Cards due per day for the next 30 days"></svg>
+      <p class="lstat" id="fnote"></p>
+    </div>
+    <div class="panel">
+      <h2>Recall on reviews, last 30 days</h2>
+      <div class="kv" id="kret"></div>
+      <p class="lstat">Counts answers on cards that were in the review state (past the learning steps). Again counts as forgotten; Hard, Good and Easy count as recalled.</p>
+    </div>
+    <div class="panel">
+      <h2>By chapter</h2>
+      <p class="lstat">Uses the chapter number you filled in on each card; the last row (none) is cards with no chapter yet.</p>
+      <div class="tablewrap"><table id="bychap"><thead><tr><th>Ch</th><th class="num">Cards</th><th class="num">New</th><th class="num">Learn</th><th class="num">Review</th><th class="num">Lapses</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="panel">
+      <h2>Most forgotten</h2>
+      <p class="lstat">Cards with the most lapses (Again on a card that had graduated). Tap one to open it in Browse.</p>
+      <ol id="leech" style="margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:6px;font-size:.88rem"></ol>
+    </div>
+    <div class="panel">
+      <h2>Where your progress is kept</h2>
+      <p class="lstat" id="where"></p>
+      <div class="bk"><h2 style="margin-top:6px">Backup</h2>
+      <p class="lstat">Copy writes your grades, schedules, settings and chapter entries as text. Restore reads that text back and keeps whichever copy of each card was reviewed most recently.</p>
+      <textarea id="bktext" aria-label="Backup text" spellcheck="false"></textarea>
+      <div class="row"><button type="button" class="btn" id="bkcopy">Copy backup</button><button type="button" class="btn" id="bkrestore">Restore from text</button></div>
+      <p class="lstat" id="bkmsg" role="status"></p></div>
+      <div class="row"><button type="button" class="btn" id="forget">Lock this device (forget passphrase)</button></div>
+      <div class="confirm" id="resetbox"><button type="button" class="btn danger" id="reset">Reset all study progress</button></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>One card for each distinct question in the source bank, worded as it appeared. Chapter, heading and page start empty; you fill them in on the back of a card. A suggested chapter, where the study-guide text supports one, is shown there as a suggestion only.</p>
+    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v18</b> &middot; 21 Oct 2026 &middot; what changed</summary>
+      <ul class="log">
+        <li><b>v18</b> Offline copy. Cards are stored encrypted; the passphrase unlocks them on this device and the app then works with no connection. Progress is kept on this device only, with a copy-and-restore backup.</li>
+        <li><b>v17</b> Spaced repetition. Study tab with Again / Hard / Good / Easy, each showing the interval it would set; a due queue (learning, then due reviews, then new cards up to the daily limit); undo; a Stats tab with a 30-day forecast, recall rate, per-chapter table and most-forgotten list. Scheduling by the FSRS library ts-fsrs 5.4.2 at its default weights. Progress saved with the page, and on this device as a fallback.</li>
+        <li><b>v16</b> Back of each card has chapter, heading and page fields you fill in. 115 cards show a suggested chapter from the study-guide text.</li>
+        <li><b>v15</b> Full deck: all 1,159 cards from the bank. Search, jump to a card number, swipe, resume.</li>
+        <li><b>v14</b> (pilot) Tapped item turns solid blue on both sides.</li>
+      </ul></details>
+  </footer>
+</main>
+<script src="fsrs.js"></script>
+<script>
+window.startApp = function(PAY){
+  'use strict';
+  var deck = PAY.deck; // [question, [four options], index of the answer]
+  var SUG = PAY.sug, CT = PAY.titles;
+  var N = deck.length;
+  var $ = function(id){return document.getElementById(id)};
+  var cid = function(i){return 'C'+('0000'+(i+1)).slice(-4)};
+  var idx = {}; for (var i=0;i<N;i++) idx[cid(i)] = i;
+  function fmt(n){return n.toLocaleString('en-US')}
+  var DAY = 86400000;
+  function dayKey(d){ d=new Date(d); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function startOfDay(d){ d=new Date(d); d.setHours(0,0,0,0); return d; }
+
+  /* ---------- persistence: localStorage cache + page db ---------- */
+  var LS = {pos:'cards-cards-pos', loc:'cards-loc-local', srs:'cards-srs-v1', set:'cards-srs-settings'};
+  function lsGet(k,def){ try{ var v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
+
+  var LOC = lsGet(LS.loc,{});                 // card id -> {chapter, heading, page}
+  var SRS = lsGet(LS.srs,{});                 // card id -> serialized FSRS card + log
+  var SET = Object.assign({newPerDay:20, retention:0.9, order:'bank', scope:'all', seed:Math.floor(Math.random()*1e9)}, lsGet(LS.set,{}));
+  var db = null, dbState = 'checking';         // 'checking' | 'on' | 'off'
+  var writeFail = null;
+
+  function syncNote(){
+    var el=$('sync');
+    if(dbState==='checking') el.textContent='';
+    else if(dbState==='on' && !writeFail) el.textContent='Progress is saved with the page.';
+    else if(dbState==='on') el.textContent='A save failed ('+writeFail+'). Progress is kept on this device and will be retried on the next grade.';
+    else el.textContent='Progress is saved on this device only.';
+    $('where').textContent = dbState==='on'
+      ? 'Study progress and your chapter/heading/page entries are saved in this page’s own database, so they follow the page to any device you open it on. A copy is also kept in this browser.'
+      : 'Study progress and your chapter/heading/page entries are kept in this browser on this device only. They do not sync to another device. Use the backup below to copy them out.';
+  }
+  function dbWrite(coll, id, data){
+    if(!db) return Promise.resolve(false);
+    return db.collection(coll).doc(id).set(data).then(function(){ writeFail=null; syncNote(); return true; },
+      function(e){ writeFail=(e&&e.code)||'error'; syncNote(); return false; });
+  }
+
+  /* ---------- FSRS ---------- */
+  var F = window.FSRS || null, sched = null;
+  function mkSched(){ if(!F) return; sched = F.fsrs(F.generatorParameters({request_retention: SET.retention, enable_fuzz:false})); }
+  if(F) mkSched(); else $('libwarn').hidden=false;
+  var ST = {New:0, Learning:1, Review:2, Relearning:3};
+  function toCard(rec){ // stored -> ts-fsrs Card
+    var c = { due:new Date(rec.due), stability:rec.stability, difficulty:rec.difficulty, elapsed_days:rec.elapsed_days, scheduled_days:rec.scheduled_days,
+      learning_steps:rec.learning_steps||0, reps:rec.reps, lapses:rec.lapses, state:rec.state, last_review: rec.last_review?new Date(rec.last_review):undefined };
+    return c;
+  }
+  function fromCard(c, log){ return { due:c.due.toISOString(), stability:c.stability, difficulty:c.difficulty, elapsed_days:c.elapsed_days, scheduled_days:c.scheduled_days,
+      learning_steps:c.learning_steps||0, reps:c.reps, lapses:c.lapses, state:c.state, last_review:c.last_review?new Date(c.last_review).toISOString():null, log:log }; }
+  function rec(id){ return SRS[id]||null; }
+  function stateOf(id){ var r=rec(id); return r?r.state:ST.New; }
+
+  /* ---------- queue ---------- */
+  var LEARN_AHEAD = 20*60000; // Anki's default learn-ahead limit, 20 minutes
+  function inScope(id){
+    if(SET.scope==='all') return true;
+    var ch = LOC[id] && LOC[id].chapter;
+    if(SET.scope==='none') return !ch;
+    return String(ch)===String(SET.scope);
+  }
+  function newToday(){ var k=dayKey(new Date()), n=0; for(var id in SRS){ var l=SRS[id].log; if(l&&l.length&&dayKey(l[0][0])===k) n++; } return n; }
+  function reviewsToday(){ var k=dayKey(new Date()), n=0; for(var id in SRS){ var l=SRS[id].log||[]; for(var j=0;j<l.length;j++) if(dayKey(l[j][0])===k) n++; } return n; }
+  function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; var t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  function newOrder(){ var ids=[]; for(var i=0;i<N;i++) ids.push(cid(i)); if(SET.order==='random'){ var r=mulberry(SET.seed); for(var k=ids.length-1;k>0;k--){ var j=Math.floor(r()*(k+1)); var t=ids[k]; ids[k]=ids[j]; ids[j]=t; } } return ids; }
+  var queue = {learn:[], due:[], fresh:[], laterLearn:[]};
+  function buildQueue(){
+    var now=Date.now(), eod=startOfDay(now).getTime()+DAY;
+    var learn=[], due=[], later=[], fresh=[];
+    for(var id in SRS){
+      if(!inScope(id)) continue;
+      var r=SRS[id], d=new Date(r.due).getTime();
+      if(r.state===ST.Learning||r.state===ST.Relearning){ if(d<=now+LEARN_AHEAD) learn.push([d,id]); else later.push([d,id]); }
+      else if(r.state===ST.Review){ if(d<eod) due.push([d,id]); }
+    }
+    learn.sort(function(a,b){return a[0]-b[0]}); due.sort(function(a,b){return a[0]-b[0]}); later.sort(function(a,b){return a[0]-b[0]});
+    var allow = Math.max(0, (SET.newPerDay|0) - newToday());
+    if(allow>0){ var ord=newOrder(); for(var k=0;k<ord.length && fresh.length<allow;k++){ var nid=ord[k]; if(!SRS[nid] && inScope(nid)) fresh.push(nid); } }
+    queue={learn:learn.map(function(x){return x[1]}), due:due.map(function(x){return x[1]}), fresh:fresh, laterLearn:later.map(function(x){return x[1]})};
+  }
+  function nextId(){
+    // learning cards that are due now first; then due reviews; then new; then learning cards within learn-ahead already included.
+    var now=Date.now();
+    for(var i=0;i<queue.learn.length;i++){ if(new Date(SRS[queue.learn[i]].due).getTime()<=now) return queue.learn[i]; }
+    if(queue.due.length) return queue.due[0];
+    if(queue.fresh.length) return queue.fresh[0];
+    if(queue.learn.length) return queue.learn[0]; // ahead of time, within the learn-ahead window
+    return null;
+  }
+
+  /* ---------- shared card rendering ---------- */
+  function fit(spanEl, pEl, box, min, max){
+    var lo=min,hi=max;
+    while(lo<hi){var mid=Math.ceil((lo+hi)/2); pEl.style.fontSize=mid+'px';
+      if(spanEl.offsetHeight<=box.clientHeight && spanEl.offsetWidth<=box.clientWidth) lo=mid; else hi=mid-1;}
+    pEl.style.fontSize=lo+'px';
+  }
+  function fillBack(ansEl, othersEl, recallEl, c){
+    ansEl.textContent=c[1][c[2]]; othersEl.innerHTML='';
+    c[1].forEach(function(o,k){ if(k!==c[2]){var li=document.createElement('li'); li.textContent=o; othersEl.appendChild(li);} });
+    recallEl.textContent='Question: '+c[0];
+  }
+  function stateLabel(id){
+    var r=rec(id); if(!r) return 'New';
+    var now=Date.now(), d=new Date(r.due).getTime();
+    if(r.state===ST.Learning) return 'Learning'; if(r.state===ST.Relearning) return 'Relearning';
+    return d<=now ? 'Due' : 'Review';
+  }
+  function dueText(id){
+    var r=rec(id); if(!r) return 'Not studied yet.';
+    var d=new Date(r.due), now=new Date();
+    var s = (r.state===ST.Review?'Review card':r.state===ST.Learning?'Learning card':'Relearning card')+' · '+r.reps+' review'+(r.reps===1?'':'s')+', '+r.lapses+' lapse'+(r.lapses===1?'':'s')+'. ';
+    if(d<=now) s+='Due now.'; else s+='Due '+(d-now<DAY? 'later today':'in '+Math.round((startOfDay(d)-startOfDay(now))/DAY)+' day'+(Math.round((startOfDay(d)-startOfDay(now))/DAY)===1?'':'s'))+'.';
+    return s;
+  }
+
+  /* ---------- locator fields (two copies, one per view) ---------- */
+  var chapOpts='<option value="">Not filled in</option>'; Object.keys(CT).forEach(function(n){ chapOpts+='<option value="'+n+'">Ch '+n+' · '+CT[n].replace(/&/g,'&amp;')+'</option>'; });
+  document.querySelectorAll('.loc').forEach(function(box){
+    var p=box.getAttribute('data-loc');
+    box.innerHTML='<span class="label">Where this is in the book · yours to fill in</span><div class="sug" id="'+p+'lsug" hidden></div>'
+      +'<label>Chapter<select id="'+p+'lchap">'+chapOpts+'</select></label>'
+      +'<div class="row2"><label>Heading<input type="text" id="'+p+'lhead" autocomplete="off" placeholder="heading in the book"></label>'
+      +'<label>Page<input type="number" id="'+p+'lpage" inputmode="numeric" min="1" step="1" placeholder="p."></label></div><p class="lstat" id="'+p+'lstat" aria-live="polite"></p>';
+  });
+  var locTimer={};
+  function showLoc(p, id){
+    var v=LOC[id]||{}; $(p+'lchap').value=v.chapter?String(v.chapter):''; $(p+'lhead').value=v.heading||''; $(p+'lpage').value=v.page||''; $(p+'lstat').textContent='';
+    var sg=SUG[id], box=$(p+'lsug');
+    if(sg && String(v.chapter||'')!==String(sg)){
+      box.hidden=false; box.innerHTML='';
+      var t=document.createElement('span'); t.textContent='Suggestion, not verified against the book: the study-guide text for Ch '+sg+' ('+CT[sg]+') contains this answer, and no other chapter’s guide text does; the question’s words also overlap that chapter most. This is Claude’s matching rule.';
+      var b=document.createElement('button'); b.type='button'; b.textContent='Use Ch '+sg;
+      b.addEventListener('click',function(){ $(p+'lchap').value=String(sg); saveLoc(p,id); });
+      box.appendChild(t); box.appendChild(b);
+    } else { box.hidden=true; box.innerHTML=''; }
+  }
+  function saveLoc(p,id){
+    var v={chapter:parseInt($(p+'lchap').value,10)||null, heading:$(p+'lhead').value.trim(), page:parseInt($(p+'lpage').value,10)||null, updated:new Date().toISOString()};
+    LOC[id]=v; lsSet(LS.loc,LOC);
+    if(SUG[id] && String($(p+'lchap').value)===String(SUG[id])) $(p+'lsug').hidden=true;
+    $(p+'lstat').textContent='Saving…';
+    clearTimeout(locTimer[p]); locTimer[p]=setTimeout(function(){
+      if(db) dbWrite('locators',id,v).then(function(ok){ $(p+'lstat').textContent= ok?'Saved.':'Not saved to the page ('+writeFail+'). Kept on this device.'; });
+      else $(p+'lstat').textContent='Saved on this device only.';
+      renderScope();
+    },500);
+  }
+  ['s','b'].forEach(function(p){
+    $(p+'lchap').addEventListener('change',function(){ var id=curLocId(p); if(id) saveLoc(p,id); });
+    $(p+'lhead').addEventListener('input',function(){ var id=curLocId(p); if(id) saveLoc(p,id); });
+    $(p+'lpage').addEventListener('input',function(){ var id=curLocId(p); if(id) saveLoc(p,id); });
+  });
+  function curLocId(p){ return p==='s' ? sCur : (bview.length?cid(bview[bpos]):null); }
+
+  /* ---------- STUDY view ---------- */
+  var sCur=null, sFlipped=false, sPreview=null, undoStack=[];
+  var scard=$('scard'), sff=$('sff'), sfb=$('sfb');
+  function sSetFlipped(f){
+    sFlipped=f; scard.classList.toggle('flipped',f);
+    sff.inert=f; sfb.inert=!f; sff.setAttribute('aria-hidden',String(f)); sfb.setAttribute('aria-hidden',String(!f));
+    $('sflipnav').hidden=f; $('grades').hidden=!f; if(f) sfb.scrollTop=0;
+  }
+  function ivText(c, now){
+    if(c.state===ST.Learning||c.state===ST.Relearning){ var m=Math.round((c.due.getTime()-now.getTime())/60000); return m<1?'<1m':m+'m'; }
+    var d=c.scheduled_days; if(d<1) d=Math.max(1,Math.round((c.due-now)/DAY));
+    if(d<30) return d+'d'; if(d<365) return (d/30).toFixed(1).replace(/\.0$/,'')+'mo'; return (d/365).toFixed(1).replace(/\.0$/,'')+'y';
+  }
+  function renderCounts(){
+    var now=Date.now(), learnDue=queue.learn.length+queue.laterLearn.length;
+    $('cN').textContent=queue.fresh.length; $('cL').textContent=learnDue; $('cR').textContent=queue.due.length;
+    $('undo').disabled=!undoStack.length;
+  }
+  function showStudy(){
+    buildQueue(); renderCounts();
+    var id=nextId();
+    if(!id || !sched){
+      sCur=null; $('sstage').hidden=true; $('sflipnav').hidden=true; $('grades').hidden=true;
+      var box=$('sdone'); box.hidden=false; box.innerHTML='';
+      var p1=document.createElement('p'); p1.className='big';
+      var later=queue.laterLearn;
+      if(!sched){ p1.textContent='Grading is off because the scheduling library did not load.'; box.appendChild(p1); }
+      else if(later.length){
+        var ms=new Date(SRS[later[0]].due).getTime()-Date.now();
+        p1.textContent='Nothing due right now.'; box.appendChild(p1);
+        var p2=document.createElement('p'); p2.textContent=later.length+' learning card'+(later.length===1?' comes':'s come')+' back in about '+Math.max(1,Math.round(ms/60000))+' min.'; box.appendChild(p2);
+        var b=document.createElement('button'); b.type='button'; b.className='btn'; b.textContent='Show it now anyway'; b.addEventListener('click',function(){ forceId=later[0]; showStudy(); }); box.appendChild(b);
+      } else {
+        var dn=newToday(), rv=reviewsToday();
+        p1.textContent='Done for today.'; box.appendChild(p1);
+        var p3=document.createElement('p'); p3.textContent=rv+' answer'+(rv===1?'':'s')+' today, '+dn+' new card'+(dn===1?'':'s')+' started. '+(SET.scope!=='all'?'Only cards in the chosen scope are counted. ':'')+'Raise the new-cards-per-day limit in Study options to keep going.'; box.appendChild(p3);
+        var unseen=0; for(var i=0;i<N;i++) if(!SRS[cid(i)]) unseen++;
+        var p4=document.createElement('p'); p4.className='lstat'; p4.textContent=fmt(unseen)+' of '+fmt(N)+' cards not started yet.'; box.appendChild(p4);
+      }
+      $('count').textContent=''; return;
+    }
+    if(forceId){ id=forceId; forceId=null; }
+    sCur=id; $('sdone').hidden=true; $('sstage').hidden=false;
+    var c=deck[idx[id]];
+    $('sqs').textContent=c[0]; $('sstate').textContent=stateLabel(id);
+    fillBack($('sans'),$('sothers'),$('sqrecall'),c); showLoc('s',id);
+    var now=new Date(); var r=rec(id); var card=r?toCard(r):F.createEmptyCard(now);
+    sPreview=sched.repeat(card, now);
+    for(var g=1;g<=4;g++) $('i'+g).textContent=ivText(sPreview[g].card, now);
+    sSetFlipped(false); fit($('sqs'),$('sq'),$('sqbox'),17,28);
+    $('count').textContent='card '+(idx[id]+1);
+  }
+  var forceId=null;
+  function grade(g){
+    if(!sCur||!sPreview||!sFlipped) return;
+    var id=sCur, now=new Date(), res=sched.repeat(rec(id)?toCard(rec(id)):F.createEmptyCard(now), now)[g];
+    var prev=SRS[id]?JSON.parse(JSON.stringify(SRS[id])):null;
+    var log=(prev&&prev.log)?prev.log.slice():[];
+    log.push([now.toISOString(), g, res.log.state, res.card.scheduled_days]);
+    if(log.length>500) log=log.slice(log.length-500);
+    SRS[id]=fromCard(res.card, log); lsSet(LS.srs,SRS);
+    undoStack.push({id:id, prev:prev}); if(undoStack.length>50) undoStack.shift();
+    dbWrite('srs',id,SRS[id]);
+    showStudy();
+  }
+  function undo(){
+    var u=undoStack.pop(); if(!u) return;
+    if(u.prev) SRS[u.id]=u.prev; else delete SRS[u.id];
+    lsSet(LS.srs,SRS);
+    if(db){ if(u.prev) dbWrite('srs',u.id,u.prev); else db.collection('srs').doc(u.id).delete().then(function(){},function(e){ writeFail=(e&&e.code)||'error'; syncNote(); }); }
+    forceId=u.id; showStudy();
+  }
+  $('sflip').addEventListener('click',function(){ if(sCur) sSetFlipped(true); });
+  sff.addEventListener('click',function(){ if(sCur) sSetFlipped(true); });
+  document.querySelectorAll('#grades button').forEach(function(b){ b.addEventListener('click',function(){ grade(parseInt(b.getAttribute('data-g'),10)); }); });
+  $('undo').addEventListener('click',undo);
+
+  // settings
+  function renderScope(){
+    var sel=$('scope'), cur=SET.scope, have={};
+    for(var id in LOC) if(LOC[id].chapter) have[LOC[id].chapter]=(have[LOC[id].chapter]||0)+1;
+    sel.innerHTML='<option value="all">All cards</option>';
+    Object.keys(CT).forEach(function(n){ if(have[n]){ var o=document.createElement('option'); o.value=n; o.textContent='Ch '+n+' · '+CT[n]+' ('+have[n]+')'; sel.appendChild(o);} });
+    var o2=document.createElement('option'); o2.value='none'; o2.textContent='Cards with no chapter filled in'; sel.appendChild(o2);
+    sel.value=cur; if(sel.value!==cur){ SET.scope='all'; sel.value='all'; }
+  }
+  function loadSettingsUI(){ $('newperday').value=SET.newPerDay; $('retention').value=String(SET.retention); $('neworder').value=SET.order; renderScope(); }
+  function saveSettings(){
+    SET.newPerDay=Math.max(0,Math.min(N,parseInt($('newperday').value,10)||0)); SET.retention=parseFloat($('retention').value)||0.9; SET.order=$('neworder').value; SET.scope=$('scope').value;
+    lsSet(LS.set,SET); mkSched(); if(db) dbWrite('settings','main',SET); showStudy();
+  }
+  ['newperday','retention','neworder','scope'].forEach(function(k){ $(k).addEventListener('change',saveSettings); });
+
+  /* ---------- BROWSE view ---------- */
+  var bview=[], bpos=0, bFlipped=false;
+  var card=$('card'), ff=$('ff'), fb=$('fb');
+  var hay = deck.map(function(c){return (c[0]+' '+c[1].join(' ')).toLowerCase()});
+  function bSetFlipped(f){
+    bFlipped=f; card.classList.toggle('flipped',f);
+    ff.inert=f; fb.inert=!f; ff.setAttribute('aria-hidden',String(f)); fb.setAttribute('aria-hidden',String(!f));
+    $('flip').textContent=f?'Show question':'Show answer'; if(f) fb.scrollTop=0;
+  }
+  function showBrowse(){
+    var empty=bview.length===0;
+    $('prev').disabled=empty||bpos===0; $('next').disabled=empty||bpos===bview.length-1; $('flip').disabled=empty;
+    if(empty){ $('qs').textContent='No card matches that search.'; $('ans').textContent=''; $('others').innerHTML=''; $('qrecall').textContent=''; $('bsched').textContent=''; $('bstate').textContent='';
+      $('count').textContent='0 matches'; bSetFlipped(false); fit($('qs'),$('q'),$('qbox'),16,22); return; }
+    var i=bview[bpos], c=deck[i], id=cid(i);
+    $('qs').textContent=c[0]; $('bstate').textContent=stateLabel(id);
+    fillBack($('ans'),$('others'),$('qrecall'),c); $('bsched').textContent=dueText(id); showLoc('b',id);
+    $('count').textContent = bview.length===N ? fmt(i+1)+' / '+fmt(N) : (bpos+1)+' of '+fmt(bview.length)+' matches';
+    bSetFlipped(false); fit($('qs'),$('q'),$('qbox'),17,28); lsSet(LS.pos,i);
+  }
+  function bgo(d){var p=bpos+d; if(p<0||p>=bview.length) return; bpos=p; showBrowse();}
+  function filter(){
+    var t=$('search').value.trim().toLowerCase(), cur=bview.length?bview[bpos]:0;
+    if(!t){bview=deck.map(function(_,i){return i}); bpos=cur; $('status').textContent='';}
+    else{ bview=[]; hay.forEach(function(h,i){ if(h.indexOf(t)>-1) bview.push(i); }); var k=bview.indexOf(cur); bpos=k>-1?k:0; $('status').textContent=bview.length+' of '+fmt(N)+' cards match.'; }
+    showBrowse();
+  }
+  function jumpTo(n){ $('search').value=''; bview=deck.map(function(_,i){return i}); bpos=n-1; $('status').textContent=''; showBrowse(); $('tools').open=false; }
+  $('flip').addEventListener('click',function(){bSetFlipped(!bFlipped)});
+  $('prev').addEventListener('click',function(){bgo(-1)});
+  $('next').addEventListener('click',function(){bgo(1)});
+  ff.addEventListener('click',function(){if(bview.length) bSetFlipped(true)});
+  $('search').addEventListener('input',filter);
+  $('clear').addEventListener('click',function(){$('search').value=''; filter();});
+  function jump(){ var n=parseInt($('jump').value,10); if(!(n>=1&&n<=N)){$('status').textContent='Enter a number from 1 to '+fmt(N)+'.'; return;} jumpTo(n); }
+  $('go').addEventListener('click',jump);
+  $('jump').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();jump();}});
+  var sx=0, sy=0, noswipe=false;
+  card.addEventListener('touchstart',function(e){var t=e.changedTouches[0]; sx=t.clientX; sy=t.clientY; noswipe=!!(e.target.closest&&e.target.closest('.loc'));},{passive:true});
+  card.addEventListener('touchend',function(e){ var t=e.changedTouches[0], dx=t.clientX-sx, dy=t.clientY-sy; if(!noswipe && Math.abs(dx)>60 && Math.abs(dx)>2*Math.abs(dy)) bgo(dx<0?1:-1); },{passive:true});
+
+  /* ---------- STATS view ---------- */
+  function kv(el, rows){ el.innerHTML=''; rows.forEach(function(r){ var a=document.createElement('span'); a.textContent=r[0]; var b=document.createElement('span'); b.textContent=r[1]; el.appendChild(a); el.appendChild(b); }); }
+  function renderStats(){
+    var now=new Date(), today=dayKey(now), t0=startOfDay(now).getTime();
+    var cnt={n:0,l:0,r:0,rl:0}, dueNow=0, lapses=0, perDay=new Array(30).fill(0), overdue=0;
+    var revAns=0, revRecalled=0, todayAns=0, todayNew=0, todayAgain=0;
+    for(var i=0;i<N;i++){
+      var id=cid(i), r=SRS[id];
+      if(!r){ cnt.n++; continue; }
+      if(r.state===ST.Learning) cnt.l++; else if(r.state===ST.Relearning) cnt.rl++; else if(r.state===ST.Review) cnt.r++; else cnt.n++;
+      lapses+=r.lapses||0;
+      var d=new Date(r.due).getTime();
+      if(r.state===ST.Review){ var k=Math.floor((d-t0)/DAY); if(k<0){overdue++; perDay[0]++;} else if(k<30) perDay[k]++; }
+      if(d<=now.getTime() && r.state!==ST.New) dueNow++;
+      var log=r.log||[];
+      for(var j=0;j<log.length;j++){ var e=log[j], ts=new Date(e[0]).getTime();
+        if(dayKey(ts)===today){ todayAns++; if(e[1]===1) todayAgain++; if(j===0) todayNew++; }
+        if(now.getTime()-ts<=30*DAY && e[2]===ST.Review){ revAns++; if(e[1]>1) revRecalled++; }
+      }
+    }
+    kv($('ktoday'),[['Answers',fmt(todayAns)],['New cards started',fmt(todayNew)+' of '+SET.newPerDay],['Again today',fmt(todayAgain)],['Due right now',fmt(dueNow)]]);
+    kv($('kdeck'),[['Cards',fmt(N)],['New (not started)',fmt(cnt.n)],['Learning',fmt(cnt.l+cnt.rl)],['Review',fmt(cnt.r)],['Lapses, total',fmt(lapses)],['Target recall',Math.round(SET.retention*100)+'%']]);
+    kv($('kret'),[['Review answers',fmt(revAns)],['Recalled',fmt(revRecalled)],['Recall rate',revAns?Math.round(100*revRecalled/revAns)+'%':'—']]);
+    // forecast chart
+    var svg=$('forecast'), W=400,H=140,padL=28,padB=22,padT=8, bw=(W-padL-4)/30, mx=Math.max(1,Math.max.apply(null,perDay));
+    var s='';
+    var ticks=[0,mx]; if(mx>=4) ticks=[0,Math.round(mx/2),mx];
+    ticks.forEach(function(v){ var y=padT+(H-padT-padB)*(1-v/mx); s+='<line x1="'+padL+'" x2="'+W+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(padL-4)+'" y="'+(y+4).toFixed(1)+'" text-anchor="end" font-size="10" font-family="var(--mono)" fill="var(--muted)">'+v+'</text>'; });
+    perDay.forEach(function(v,k){ var h=(H-padT-padB)*v/mx, x=padL+k*bw; if(v>0) s+='<rect x="'+(x+1).toFixed(1)+'" y="'+(H-padB-h).toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+h.toFixed(1)+'" fill="'+(k===0?'var(--again)':'var(--accent)')+'" rx="1"/>'; });
+    [0,7,14,21,29].forEach(function(k){ s+='<text x="'+(padL+k*bw+bw/2).toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" font-family="var(--mono)" fill="var(--muted)">'+(k===0?'today':'+'+k+'d')+'</text>'; });
+    svg.innerHTML=s;
+    $('fnote').textContent='Review cards only; learning-step cards are not plotted. '+(overdue?overdue+' overdue card'+(overdue===1?' is':'s are')+' counted in today.':'Nothing is overdue.');
+    // by chapter
+    var rows={}, order=Object.keys(CT).concat(['none']);
+    order.forEach(function(k){ rows[k]={cards:0,n:0,l:0,r:0,lap:0}; });
+    for(var i2=0;i2<N;i2++){ var id2=cid(i2), ch=(LOC[id2]&&LOC[id2].chapter)?String(LOC[id2].chapter):'none', r2=SRS[id2], row=rows[ch]||rows.none;
+      row.cards++; if(!r2||r2.state===ST.New) row.n++; else if(r2.state===ST.Review) row.r++; else row.l++; if(r2) row.lap+=r2.lapses||0; }
+    var tb=$('bychap').querySelector('tbody'); tb.innerHTML='';
+    order.forEach(function(k){ var row=rows[k]; if(!row.cards) return; var tr=document.createElement('tr');
+      [k==='none'?'none':k, row.cards,row.n,row.l,row.r,row.lap].forEach(function(v,ci){ var td=document.createElement('td'); if(ci) td.className='num'; else { td.className='mono'; td.title=k==='none'?'No chapter filled in':CT[k]; } td.textContent=typeof v==='number'?fmt(v):v; tr.appendChild(td); }); tb.appendChild(tr); });
+    // most forgotten
+    var worst=[]; for(var i3=0;i3<N;i3++){ var r3=SRS[cid(i3)]; if(r3&&r3.lapses>0) worst.push([r3.lapses,i3]); }
+    worst.sort(function(a,b){return b[0]-a[0]||a[1]-b[1]}); var ol=$('leech'); ol.innerHTML='';
+    if(!worst.length){ var li0=document.createElement('li'); li0.textContent='No lapses yet.'; li0.style.listStyle='none'; li0.style.marginLeft='-1.2rem'; ol.appendChild(li0); }
+    worst.slice(0,10).forEach(function(w){ var li=document.createElement('li'); var a=document.createElement('a'); a.href='#'; a.textContent=deck[w[1]][0]; a.style.color='var(--fg)';
+      a.addEventListener('click',function(e){ e.preventDefault(); setTab('browse'); jumpTo(w[1]+1); });
+      li.appendChild(a); var sm=document.createElement('span'); sm.className='mono'; sm.style.color='var(--muted)'; sm.textContent=' · '+w[0]+' lapse'+(w[0]===1?'':'s'); li.appendChild(sm); ol.appendChild(li); });
+    syncNote();
+  }
+  // reset with in-page confirmation
+  $('reset').addEventListener('click',function(){
+    var box=$('resetbox'); box.innerHTML='';
+    var t=document.createElement('span'); t.textContent='This clears every grade and schedule on all '+fmt(N)+' cards. Chapter, heading and page entries are kept. Sure?';
+    var y=document.createElement('button'); y.type='button'; y.className='btn danger'; y.textContent='Yes, reset';
+    var n=document.createElement('button'); n.type='button'; n.className='btn'; n.textContent='Keep my progress';
+    y.addEventListener('click',function(){
+      var ids=Object.keys(SRS); SRS={}; lsSet(LS.srs,SRS); undoStack=[];
+      if(db){ ids.forEach(function(id){ db.collection('srs').doc(id).delete().then(function(){},function(){}); }); }
+      box.innerHTML=''; var d=document.createElement('span'); d.textContent='Progress cleared.'; box.appendChild(d); renderStats(); showStudy();
+    });
+    n.addEventListener('click',function(){ box.innerHTML=''; box.appendChild($('reset')); });
+    box.appendChild(t); box.appendChild(y); box.appendChild(n);
+  });
+
+  /* ---------- tabs + keys ---------- */
+  var TAB=lsGet('cards-tab','study');
+  function setTab(t){
+    TAB=t; lsSet('cards-tab',t);
+    ['study','browse','stats'].forEach(function(k){ var on=k===t; $('tab-'+k).setAttribute('aria-selected',String(on)); $('v-'+k).hidden=!on; });
+    if(t==='study') showStudy(); else if(t==='browse') showBrowse(); else { $('count').textContent=''; renderStats(); }
+  }
+  ['study','browse','stats'].forEach(function(k){ $('tab-'+k).addEventListener('click',function(){ setTab(k); }); });
+  document.addEventListener('keydown',function(e){
+    var t=e.target&&e.target.tagName; if(t==='INPUT'||t==='SUMMARY'||t==='SELECT'||t==='TEXTAREA') return;
+    if(TAB==='study'){
+      if(e.key===' '||e.key==='Enter'){ if(t==='BUTTON'&&e.key==='Enter') return; e.preventDefault(); if(sCur&&!sFlipped) sSetFlipped(true); }
+      else if(/^[1-4]$/.test(e.key)){ if(sFlipped) grade(parseInt(e.key,10)); }
+      else if(e.key==='u'||e.key==='U') undo();
+    } else if(TAB==='browse'){
+      if(e.key==='ArrowRight') bgo(1); else if(e.key==='ArrowLeft') bgo(-1);
+      else if(e.key===' '||e.key==='Enter'){ if(t==='BUTTON') return; e.preventDefault(); if(bview.length) bSetFlipped(!bFlipped); }
+    }
+  });
+  var rz; window.addEventListener('resize',function(){clearTimeout(rz); rz=setTimeout(function(){ if(TAB==='browse'&&bview.length) fit($('qs'),$('q'),$('qbox'),17,28); if(TAB==='study'&&sCur&&!sFlipped) fit($('sqs'),$('sq'),$('sqbox'),17,28); },150);});
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(function(){ if(TAB==='browse'&&bview.length&&!bFlipped) fit($('qs'),$('q'),$('qbox'),17,28); if(TAB==='study'&&sCur&&!sFlipped) fit($('sqs'),$('sq'),$('sqbox'),17,28); });
+
+  /* ---------- boot ---------- */
+  bview=deck.map(function(_,i){return i}); var sp=lsGet(LS.pos,0); bpos=(sp>=0&&sp<N)?sp:0;
+  loadSettingsUI(); setTab(TAB);
+
+  dbState='off'; syncNote();
+
+  /* ---------- backup + lock ---------- */
+  $('bkcopy').addEventListener('click',function(){
+    var s=JSON.stringify({app:'cards-cards',v:1,at:new Date().toISOString(),srs:SRS,loc:LOC,set:SET}); var ta=$('bktext'); ta.value=s; ta.focus(); ta.select();
+    var done=function(ok){ $('bkmsg').textContent= ok?'Copied. Paste it somewhere safe (a note, a message to yourself).':'Selected; press and hold, then Copy.'; };
+    try{ navigator.clipboard.writeText(s).then(function(){done(true)},function(){done(false)}); }catch(e){ done(false); }
+  });
+  $('bkrestore').addEventListener('click',function(){
+    var o; try{ o=JSON.parse($('bktext').value); }catch(e){ $('bkmsg').textContent='That text is not a backup.'; return; }
+    if(!o||o.app!=='cards-cards'||typeof o.srs!=='object'){ $('bkmsg').textContent='That text is not a backup from this app.'; return; }
+    var n=0; Object.keys(o.srs).forEach(function(id){ if(!(id in idx)) return; var r=o.srs[id], l=SRS[id]; if(!l||(r.last_review||'')>(l.last_review||'')){ SRS[id]=r; n++; } });
+    var m=0; Object.keys(o.loc||{}).forEach(function(id){ if(!(id in idx)) return; var r=o.loc[id], l=LOC[id]; if(!l||(r.updated||'')>(l.updated||'')){ LOC[id]=r; m++; } });
+    lsSet(LS.srs,SRS); lsSet(LS.loc,LOC); undoStack=[];
+    $('bkmsg').textContent='Restored '+n+' card'+(n===1?'':'s')+' and '+m+' chapter entr'+(m===1?'y':'ies')+'.'; renderStats(); showStudy();
+  });
+  $('forget').addEventListener('click',function(){ window.forgetKey().then(function(){ location.reload(); }); });
+};
+</script>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(i){return document.getElementById(i)};
+  var enc=null, started=false;
+  function b64(s){ var b=atob(s), u=new Uint8Array(b.length); for(var i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return u; }
+  /* the derived key is kept as a non-extractable CryptoKey in IndexedDB, so the passphrase is asked once per device */
+  function idb(){ return new Promise(function(res,rej){ var r=indexedDB.open('cards-key',1); r.onupgradeneeded=function(){ r.result.createObjectStore('k'); }; r.onsuccess=function(){res(r.result)}; r.onerror=function(){rej(r.error)}; }); }
+  function kGet(){ return idb().then(function(d){ return new Promise(function(res,rej){ var q=d.transaction('k').objectStore('k').get('key'); q.onsuccess=function(){res(q.result||null)}; q.onerror=function(){rej(q.error)}; }); }); }
+  function kPut(v){ return idb().then(function(d){ return new Promise(function(res,rej){ var tx=d.transaction('k','readwrite'); tx.objectStore('k').put(v,'key'); tx.oncomplete=function(){res()}; tx.onerror=function(){rej(tx.error)}; }); }); }
+  window.forgetKey=function(){ return idb().then(function(d){ return new Promise(function(res){ var tx=d.transaction('k','readwrite'); tx.objectStore('k').delete('key'); tx.oncomplete=function(){res()}; tx.onerror=function(){res()}; }); }).catch(function(){}); };
+  function open(key){
+    return crypto.subtle.decrypt({name:'AES-GCM',iv:b64(enc.iv)}, key, b64(enc.ct)).then(function(pt){ return JSON.parse(new TextDecoder().decode(pt)); });
+  }
+  function run(p){
+    if(started) return; started=true; $('lock').hidden=true; $('app').hidden=false; window.startApp(p);
+    try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+  }
+  function showLock(msg){ $('app').hidden=true; $('lock').hidden=false; $('lockerr').textContent=msg||''; }
+  function load(){
+    if(!(window.crypto&&crypto.subtle&&window.indexedDB)){ showLock('This browser cannot decrypt the cards (it needs a secure connection and Web Crypto).'); return; }
+    fetch('deck.enc',{cache:'no-cache'}).catch(function(){ return fetch('deck.enc'); }).then(function(r){ if(!r.ok) throw new Error('deck'); return r.json(); }).then(function(j){
+      enc=j;
+      return kGet().then(function(rec){
+        if(rec&&rec.salt===enc.salt) return open(rec.key).then(run, function(){ showLock(''); });
+        showLock('');
+      }, function(){ showLock(''); });
+    }).catch(function(){ showLock('Could not load the card file. Connect once and reload.'); });
+  }
+  $('unlock').addEventListener('click',function(){
+    var pw=$('pp').value; if(!pw||!enc) return; $('lockerr').textContent='Checking…'; $('unlock').disabled=true;
+    crypto.subtle.importKey('raw',new TextEncoder().encode(pw.normalize('NFC')),'PBKDF2',false,['deriveKey']).then(function(base){
+      return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(enc.salt),iterations:enc.iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+    }).then(function(key){
+      return open(key).then(function(p){ $('pp').value=''; return kPut({salt:enc.salt,key:key}).catch(function(){}).then(function(){ run(p); }); },
+        function(){ $('lockerr').textContent='Wrong passphrase.'; });
+    }).catch(function(){ $('lockerr').textContent='Could not unlock.'; }).then(function(){ $('unlock').disabled=false; });
+  });
+  $('pp').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); $('unlock').click(); } });
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+  load();
+})();
+</script>
+</body></html>
