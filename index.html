@@ -137,6 +137,8 @@ img{max-width:100%}
 </section>
 <main id="app" hidden>
   <header><h1>Cards</h1><span id="count" aria-live="polite"></span></header>
+  <div id="upd" class="warn" hidden role="status"><span>A new version is ready.</span>
+    <div class="row" style="margin-top:6px"><button type="button" class="btn" id="updgo">Reload now</button><button type="button" class="btn" id="updlater">Later</button></div></div>
   <div class="tabs" role="tablist" aria-label="View">
     <button type="button" role="tab" id="tab-study" aria-selected="true" aria-controls="v-study">Study</button>
     <button type="button" role="tab" id="tab-browse" aria-selected="false" aria-controls="v-browse">Browse</button>
@@ -302,8 +304,9 @@ img{max-width:100%}
 
   <footer>
     <p>One card for each distinct question in the source bank, worded as it appeared. Chapter, heading and page start empty; you fill them in on the back of a card. A suggested chapter, where the study-guide text supports one, is shown there as a suggestion only.</p>
-    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v21</b> &middot; 4 Nov 2026 &middot; what changed</summary>
+    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v22</b> &middot; 4 Nov 2026 &middot; what changed</summary>
       <ul class="log">
+        <li><b>v22</b> Checks for a new version when you come back to the app and every 30 minutes, and shows a Reload banner when one is ready.</li>
         <li><b>v21</b> Card style setting: answer only (new default), answer with other choices, or test mode with shuffled choices on the front.</li>
         <li><b>v20</b> Daily review limit, leech suspend, bury until tomorrow, manual suspend with an unsuspend list, interval fuzz.</li>
         <li><b>v19</b> Save and restore backups as a file, backup reminder after 7 days, review-log CSV export, persistent-storage status, optional custom FSRS weights.</li>
@@ -917,7 +920,21 @@ window.startApp = function(PAY){
     }).catch(function(){ $('lockerr').textContent='Could not unlock.'; }).then(function(){ $('unlock').disabled=false; });
   });
   $('pp').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); $('unlock').click(); } });
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+  /* updates: look for a new version when the app is brought back and every 30 minutes; never reload on its own */
+  if('serviceWorker' in navigator){
+    var hadController=!!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange',function(){
+      if(!hadController){ hadController=true; return; }   // first install, nothing to offer
+      var u=$('upd'); if(u) u.hidden=false;
+    });
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      var check=function(){ try{ reg.update(); }catch(e){} };
+      document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') check(); });
+      setInterval(check,30*60*1000);
+    }).catch(function(){});
+    $('updgo').addEventListener('click',function(){ location.reload(); });
+    $('updlater').addEventListener('click',function(){ $('upd').hidden=true; });
+  }
   load();
 })();
 </script>
