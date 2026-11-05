@@ -313,8 +313,9 @@ img{max-width:100%}
 
   <footer>
     <p>One card for each distinct question in the source bank, worded as it appeared. Chapter, heading and page start empty; you fill them in on the back of a card. A suggested chapter, where the study-guide text supports one, is shown there as a suggestion only.</p>
-    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v23</b> &middot; 4 Nov 2026 &middot; what changed</summary>
+    <details id="ver"><summary style="font-size:.75rem;padding:4px 0;cursor:pointer"><b>Build v24</b> &middot; 5 Nov 2026 &middot; what changed</summary>
       <ul class="log">
+        <li><b>v24</b> The empty memory-hook box now coaches you to picture the key word on the front and the answer together.</li>
         <li><b>v23</b> Memory hook note on the back of every card (a starter idea you can edit, kept in your backup), a nudge to use it when you miss a card you knew, and an optional break reminder.</li>
         <li><b>v22</b> Checks for a new version when you come back to the app and every 30 minutes, and shows a Reload banner when one is ready.</li>
         <li><b>v21</b> Card style setting: answer only (new default), answer with other choices, or test mode with shuffled choices on the front.</li>
@@ -528,12 +529,12 @@ window.startApp = function(PAY){
   document.querySelectorAll('.hook').forEach(function(box){
     var p=box.getAttribute('data-hook');
     box.innerHTML='<span class="label">My memory hook</span>'
-      +'<textarea id="'+p+'hk" rows="3" spellcheck="true" aria-label="Memory hook for this card" placeholder="Picture it: big, silly, moving, with your senses."></textarea>'
+      +'<textarea id="'+p+'hk" rows="3" spellcheck="true" aria-label="Memory hook for this card" placeholder="Your picture: the front's key word and the answer, colliding in one silly scene."></textarea>'
       +'<div class="row"><button type="button" class="btn" id="'+p+'hkreset" hidden>Use the starter again</button><span class="lstat" id="'+p+'hkstat" aria-live="polite"></span></div>';
   });
   function showHook(p,id){
     $(p+'hk').value=hookText(id); $(p+'hkreset').hidden=!(hookMine(id) && hookSug(id));
-    $(p+'hkstat').textContent = hookMine(id) ? 'Yours.' : (hookSug(id) ? 'Starter idea. Edit it to make it yours.' : 'Nothing yet. Make the answer a picture.');
+    $(p+'hkstat').textContent = hookMine(id) ? 'Yours.' : (hookSug(id) ? 'Starter idea. Edit it to make it yours.' : 'Nothing yet. Picture the key word on the front and the answer, then make them collide in one scene: something giant, something moving, a sound or a smell.');
   }
   function saveHook(p,id,val){
     val=val.trim(); var sug=hookSug(id);
@@ -686,7 +687,7 @@ window.startApp = function(PAY){
       setFlag(id,{susp:true,leech:true});
       pendingNote='Card '+(idx[id]+1)+' was suspended as a leech after '+res.card.lapses+' lapses. It is listed under Stats, where you can unsuspend it.';
     } else if(g===1 && prev && prev.state===ST.Review){
-      pendingNote='Missed one you knew. When it comes back, look at its memory hook on the back, or make the answer a picture: big, silly, moving, using your senses.';
+      pendingNote='Missed one you knew. When it comes back, look at its memory hook on the back, or make one: picture the key word on the front and the answer colliding in one silly scene.';
     }
     undoStack.push({id:id, prev:prev, flagsPrev:flagsPrev}); if(undoStack.length>50) undoStack.shift();
     dbWrite('srs',id,SRS[id]);
