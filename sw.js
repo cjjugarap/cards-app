@@ -1,4 +1,4 @@
-const V='cards-af3e822f4c';
+const V='cards-632da1ec76';
 const SHELL=['./','index.html','fsrs.js','deck.enc','manifest.webmanifest','icon-180.png','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(SHELL.map(u=>new Request(u,{cache:'reload'})))).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
